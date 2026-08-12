@@ -1,6 +1,7 @@
 /**
  * 14 - Graphs: representations, BFS/DFS, cycle detection, topological sort,
- * Dijkstra, Bellman-Ford, and grids as implicit graphs.
+ * Dijkstra, Bellman-Ford, Floyd-Warshall, strongly connected components
+ * (Kosaraju and Tarjan), and grids as implicit graphs.
  *
  * Run:  node graphs.js
  */
@@ -386,7 +387,249 @@ export function bellmanFord(edges, vertices, start) {
 }
 
 // ============================================================================
-// 7. Grids as implicit graphs
+// 7. All-pairs shortest paths
+// ============================================================================
+/**
+ * Floyd-Warshall: shortest path between EVERY pair. O(V^3) time, O(V^2) space.
+ *
+ * Input is an adjacency matrix where `matrix[u][v]` is the edge weight and
+ * `Infinity` means "no edge". Returns a NEW matrix; the input is untouched.
+ *
+ * A DP over which vertices may be used as intermediates:
+ *
+ *     dist[k][u][v] = shortest u->v path using only 0..k-1 in the middle
+ *
+ * Adding vertex k either helps or it does not:
+ *
+ *     dist[k+1][u][v] = min(dist[k][u][v],                  // skip k
+ *                           dist[k][u][k] + dist[k][k][v])  // route through k
+ *
+ * The k dimension drops out - updating in place is safe because `dist[u][k]`
+ * and `dist[k][v]` are never improved by k itself (that would need a negative
+ * cycle). Hence three loops with **k outermost**. Reordering them is the
+ * classic bug: it uses k before k is finished.
+ *
+ * Handles negative edges. A negative cycle shows as `dist[v][v] < 0`.
+ *
+ * `Infinity + Infinity` is `Infinity` and comparisons stay well-defined, so JS
+ * needs none of the overflow sentinels C++ and Go do - one of the rare places
+ * float64 arithmetic is an advantage.
+ */
+export function floydWarshall(matrix) {
+  const n = matrix.length;
+  const dist = matrix.map((row) => [...row]); // copy: never mutate the input
+
+  for (let k = 0; k < n; k++) {
+    // k OUTERMOST - see above
+    for (let u = 0; u < n; u++) {
+      if (dist[u][k] === Infinity) continue; // no path into k, skip the row
+      for (let v = 0; v < n; v++) {
+        if (dist[u][k] + dist[k][v] < dist[u][v]) {
+          dist[u][v] = dist[u][k] + dist[k][v];
+        }
+      }
+    }
+  }
+  return dist;
+}
+
+/**
+ * Warshall's transitive closure: can v be reached from u? O(V^3).
+ *
+ * Floyd-Warshall with (min, +) replaced by (or, and) - instead of "how short is
+ * the path", just "is there one". The same triple loop, on booleans.
+ *
+ * `reachable[v][v]` starts true: a vertex reaches itself by the empty path. For
+ * "reachable by a NON-empty path" (i.e. is v on a cycle), start it false.
+ */
+export function transitiveClosure(graph, n) {
+  const reachable = Array.from({ length: n }, () => new Array(n).fill(false));
+
+  for (let u = 0; u < n; u++) {
+    reachable[u][u] = true; // empty path
+    for (const v of graph.get(u) ?? []) reachable[u][v] = true;
+  }
+
+  for (let k = 0; k < n; k++) {
+    for (let u = 0; u < n; u++) {
+      if (!reachable[u][k]) continue;
+      for (let v = 0; v < n; v++) {
+        if (reachable[k][v]) reachable[u][v] = true;
+      }
+    }
+  }
+  return reachable;
+}
+
+// ============================================================================
+// 8. Strongly connected components
+// ============================================================================
+/**
+ * Kosaraju's algorithm: strongly connected components of a DIRECTED graph.
+ * O(V + E).
+ *
+ * An SCC is a maximal set of vertices where every one reaches every other.
+ * Contracting each SCC to a node turns any directed graph into a DAG - the
+ * "condensation" - which is what makes 2-SAT and DP-on-graphs tractable.
+ *
+ * Two passes:
+ *   1. DFS the graph, pushing each vertex when it FINISHES. The stack now holds
+ *      vertices in reverse finishing order.
+ *   2. DFS the REVERSED graph, taking start vertices off that stack. Each tree
+ *      found is exactly one SCC.
+ *
+ * Why it works: reversing every edge leaves the SCCs unchanged (if u reaches v
+ * and v reaches u, both still hold after reversal) but flips every edge BETWEEN
+ * components. So the second pass, starting from the component that finished
+ * last, cannot escape into another component - the DFS is trapped inside
+ * exactly one SCC.
+ *
+ * Iterative, because a recursive DFS blows the JS stack somewhere around 10k
+ * frames and there is no tail-call elimination in practice.
+ */
+export function sccKosaraju(graph, vertices) {
+  const list = [...vertices];
+
+  // Pass 1: order by finishing time.
+  const visited = new Set();
+  const order = [];
+  for (const start of list) {
+    if (visited.has(start)) continue;
+    visited.add(start);
+    const stack = [{ node: start, next: 0 }];
+    while (stack.length) {
+      const frame = stack.at(-1);
+      const children = graph.get(frame.node) ?? [];
+      if (frame.next < children.length) {
+        const child = children[frame.next++];
+        if (!visited.has(child)) {
+          visited.add(child);
+          stack.push({ node: child, next: 0 });
+        }
+      } else {
+        order.push(frame.node); // all children done: node FINISHES
+        stack.pop();
+      }
+    }
+  }
+
+  const reversed = new Map(); // flip every edge
+  for (const u of list) {
+    for (const v of graph.get(u) ?? []) {
+      if (!reversed.has(v)) reversed.set(v, []);
+      reversed.get(v).push(u);
+    }
+  }
+
+  // Pass 2: DFS the reversal in reverse finishing order.
+  const seen = new Set();
+  const components = [];
+  for (let i = order.length - 1; i >= 0; i--) {
+    const start = order[i];
+    if (seen.has(start)) continue;
+    const component = [];
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const node = stack.pop();
+      component.push(node);
+      for (const neighbour of reversed.get(node) ?? []) {
+        if (!seen.has(neighbour)) {
+          seen.add(neighbour);
+          stack.push(neighbour);
+        }
+      }
+    }
+    components.push(component.sort((a, b) => a - b));
+  }
+  return components;
+}
+
+/**
+ * Tarjan's algorithm: strongly connected components in ONE DFS pass. O(V + E).
+ *
+ * Each vertex gets two numbers:
+ *   - `index`   - when it was first visited (a timestamp)
+ *   - `lowlink` - the smallest index reachable from its subtree, following at
+ *                 most one edge back to a vertex still ON THE STACK
+ *
+ * A vertex with `lowlink === index` ROOTS an SCC: nothing in its subtree found
+ * a way back above it, so everything stacked above it is exactly one component.
+ *
+ * The "still on the stack" test is the entire subtlety. An edge into an already
+ * finished vertex leads to a CLOSED component; following it would wrongly merge
+ * two SCCs. `onStack` distinguishes a back edge (same component) from a cross
+ * edge (a different, finished one).
+ *
+ * One pass instead of Kosaraju's two, and it emits components in reverse
+ * topological order of the condensation for free.
+ */
+export function sccTarjan(graph, vertices) {
+  const index = new Map();
+  const lowlink = new Map();
+  const onStack = new Set();
+  const stack = [];
+  const components = [];
+  let counter = 0;
+
+  for (const root of vertices) {
+    if (index.has(root)) continue;
+
+    index.set(root, counter);
+    lowlink.set(root, counter);
+    counter++;
+    stack.push(root);
+    onStack.add(root);
+    const work = [{ node: root, next: 0 }];
+
+    while (work.length) {
+      const frame = work.at(-1);
+      const children = graph.get(frame.node) ?? [];
+
+      if (frame.next < children.length) {
+        const child = children[frame.next++];
+        if (!index.has(child)) {
+          // tree edge: descend
+          index.set(child, counter);
+          lowlink.set(child, counter);
+          counter++;
+          stack.push(child);
+          onStack.add(child);
+          work.push({ node: child, next: 0 });
+        } else if (onStack.has(child)) {
+          // back edge, same SCC
+          lowlink.set(frame.node, Math.min(lowlink.get(frame.node), index.get(child)));
+        }
+        // else: cross edge into a CLOSED component - ignore it
+        continue;
+      }
+
+      const finished = frame.node;
+      work.pop();
+      if (work.length) {
+        // propagate to the parent
+        const parent = work.at(-1).node;
+        lowlink.set(parent, Math.min(lowlink.get(parent), lowlink.get(finished)));
+      }
+
+      if (lowlink.get(finished) === index.get(finished)) {
+        // roots an SCC
+        const component = [];
+        for (;;) {
+          const member = stack.pop();
+          onStack.delete(member);
+          component.push(member);
+          if (member === finished) break;
+        }
+        components.push(component.sort((a, b) => a - b));
+      }
+    }
+  }
+  return components;
+}
+
+// ============================================================================
+// 9. Grids as implicit graphs
 // ============================================================================
 const DIRECTIONS = [
   [0, 1],
@@ -620,7 +863,186 @@ function demo() {
     -1,
   );
 
+  // --- Floyd-Warshall -------------------------------------------------------
+  //  0 -> 1 (3), 1 -> 2 (1), 0 -> 2 (7), 2 -> 0 (2)
+  const weightMatrix = [
+    [0, 3, 7],
+    [Infinity, 0, 1],
+    [2, Infinity, 0],
+  ];
+  const apsp = floydWarshall(weightMatrix);
+  assert.equal(apsp[0][2], 4); // 0->1->2 beats the direct 7
+  assert.equal(apsp[1][0], 3); // 1->2->0
+  assert.equal(weightMatrix[0][2], 7); // input was not mutated
+
+  // Negative edges: Dijkstra would be wrong here, Floyd-Warshall is not.
+  assert.equal(
+    floydWarshall([
+      [0, 4, Infinity],
+      [Infinity, 0, -3],
+      [Infinity, Infinity, 0],
+    ])[0][2],
+    1, // 4 + (-3)
+  );
+
+  // A negative cycle shows up on the diagonal.
+  assert.ok(
+    floydWarshall([
+      [0, 1, Infinity],
+      [Infinity, 0, -5],
+      [3, Infinity, 0],
+    ])[0][0] < 0,
+  );
+
+  // Deterministic PRNG so a failure is always reproducible.
+  let seed = 14;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const randInt = (lo, hi) => lo + Math.floor(random() * (hi - lo + 1));
+
+  // Against Dijkstra from every source, on random non-negative graphs.
+  for (let trial = 0; trial < 40; trial++) {
+    const n = randInt(1, 12);
+    const dense = Array.from({ length: n }, (_, u) =>
+      Array.from({ length: n }, (_, v) => (u === v ? 0 : Infinity)),
+    );
+    const weightedRandom = new Map();
+    for (let u = 0; u < n; u++) weightedRandom.set(u, []);
+    for (let u = 0; u < n; u++) {
+      for (let v = 0; v < n; v++) {
+        if (u !== v && random() < 0.35) {
+          const w = randInt(1, 20);
+          dense[u][v] = Math.min(dense[u][v], w);
+          weightedRandom.get(u).push([v, w]);
+        }
+      }
+    }
+
+    const allPairs = floydWarshall(dense);
+    for (let source = 0; source < n; source++) {
+      const single = dijkstra(weightedRandom, source);
+      for (let target = 0; target < n; target++) {
+        assert.equal(allPairs[source][target], single.get(target) ?? Infinity);
+      }
+    }
+  }
+
+  // --- Transitive closure ---------------------------------------------------
+  const reachGraph = new Map([
+    [0, [1]],
+    [1, [2]],
+    [2, [0]],
+    [3, [2]],
+  ]);
+  const closure = transitiveClosure(reachGraph, 4);
+  assert.ok(closure[0][2] && closure[2][1]); // around the cycle
+  assert.ok(closure[3][0] && !closure[0][3]); // 3 is a one-way entrance
+  for (let v = 0; v < 4; v++) assert.ok(closure[v][v]); // empty path
+
+  // Against BFS reachability on random graphs.
+  for (let trial = 0; trial < 40; trial++) {
+    const n = randInt(1, 12);
+    const adjacency = new Map();
+    for (let u = 0; u < n; u++) adjacency.set(u, []);
+    for (let u = 0; u < n; u++) {
+      for (let v = 0; v < n; v++) {
+        if (u !== v && random() < 0.25) adjacency.get(u).push(v);
+      }
+    }
+
+    const reach = transitiveClosure(adjacency, n);
+    for (let source = 0; source < n; source++) {
+      const expected = new Set(bfs(adjacency, source));
+      for (let target = 0; target < n; target++) {
+        assert.equal(reach[source][target], expected.has(target));
+      }
+    }
+  }
+
+  // --- Strongly connected components ----------------------------------------
+  //  0 -> 1 -> 2 -> 0 (one SCC), 3 -> 2 and 3 -> 4 (singletons)
+  const sccGraph = new Map([
+    [0, [1]],
+    [1, [2]],
+    [2, [0]],
+    [3, [2, 4]],
+    [4, []],
+  ]);
+  const byFirst = (a, b) => a[0] - b[0];
+  const expectedSccs = [[0, 1, 2], [3], [4]];
+  assert.deepEqual(sccKosaraju(sccGraph, [0, 1, 2, 3, 4]).sort(byFirst), expectedSccs);
+  assert.deepEqual(sccTarjan(sccGraph, [0, 1, 2, 3, 4]).sort(byFirst), expectedSccs);
+
+  // A DAG has one component per vertex; a full cycle has exactly one.
+  const dagGraph = new Map([
+    [0, [1, 2]],
+    [1, [3]],
+    [2, [3]],
+    [3, []],
+  ]);
+  assert.deepEqual(sccTarjan(dagGraph, [0, 1, 2, 3]).sort(byFirst), [[0], [1], [2], [3]]);
+
+  const ring = new Map();
+  for (let i = 0; i < 6; i++) ring.set(i, [(i + 1) % 6]);
+  assert.deepEqual(sccTarjan(ring, [...ring.keys()]), [[0, 1, 2, 3, 4, 5]]);
+
+  // Both algorithms against the DEFINITION, via the transitive closure:
+  // u and v share an SCC exactly when each reaches the other.
+  for (let trial = 0; trial < 60; trial++) {
+    const n = randInt(1, 11);
+    const adjacency = new Map();
+    for (let u = 0; u < n; u++) adjacency.set(u, []);
+    for (let u = 0; u < n; u++) {
+      for (let v = 0; v < n; v++) {
+        if (u !== v && random() < 0.22) adjacency.get(u).push(v);
+      }
+    }
+
+    const reach = transitiveClosure(adjacency, n);
+    const groups = new Map();
+    for (let v = 0; v < n; v++) {
+      const key = [];
+      for (let u = 0; u < n; u++) if (reach[u][v] && reach[v][u]) key.push(u);
+      const id = key.join(",");
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(v);
+    }
+    const brute = [...groups.values()].sort(byFirst);
+    const vertexList = [...adjacency.keys()];
+
+    assert.deepEqual(sccKosaraju(adjacency, vertexList).sort(byFirst), brute);
+    assert.deepEqual(sccTarjan(adjacency, vertexList).sort(byFirst), brute);
+  }
+
+  // Tarjan emits components in reverse topological order of the condensation:
+  // every edge leaving a component points to one emitted EARLIER.
+  for (let trial = 0; trial < 30; trial++) {
+    const n = randInt(2, 10);
+    const adjacency = new Map();
+    for (let u = 0; u < n; u++) adjacency.set(u, []);
+    for (let u = 0; u < n; u++) {
+      for (let v = 0; v < n; v++) {
+        if (u !== v && random() < 0.22) adjacency.get(u).push(v);
+      }
+    }
+
+    const order = sccTarjan(adjacency, [...adjacency.keys()]);
+    const componentOf = new Map();
+    order.forEach((members, i) => members.forEach((v) => componentOf.set(v, i)));
+    for (let u = 0; u < n; u++) {
+      for (const v of adjacency.get(u)) {
+        assert.ok(componentOf.get(v) <= componentOf.get(u));
+      }
+    }
+  }
+
   console.log("14-Graphs (JavaScript): all checks passed");
+  console.log(
+    "  Floyd-Warshall cross-checked against Dijkstra from every source,\n" +
+      "  Kosaraju and Tarjan against the transitive-closure definition",
+  );
 }
 
 demo();

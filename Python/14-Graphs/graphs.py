@@ -1,6 +1,7 @@
 """
 14 - Graphs: representations, BFS/DFS, cycle detection, topological sort,
-Dijkstra, Bellman-Ford, and grids as implicit graphs.
+Dijkstra, Bellman-Ford, Floyd-Warshall, strongly connected components
+(Kosaraju and Tarjan), and grids as implicit graphs.
 
 Run:  python graphs.py
 """
@@ -8,6 +9,7 @@ Run:  python graphs.py
 from __future__ import annotations
 
 import heapq
+import random
 from collections import defaultdict, deque
 from typing import Iterable, Optional
 
@@ -397,6 +399,222 @@ def shortest_path_grid(grid: list[list[int]]) -> int:
 
 
 # ============================================================================
+# 8. All-pairs shortest paths
+# ============================================================================
+def floyd_warshall(matrix: list[list[float]]) -> list[list[float]]:
+    """Shortest path between EVERY pair of vertices. O(V^3) time, O(V^2) space.
+
+    Input is an adjacency matrix where matrix[u][v] is the edge weight and
+    float("inf") means "no edge". Returns a new matrix of distances.
+
+    The idea is a DP over which vertices are allowed as intermediates:
+
+        dist[k][u][v] = shortest u->v path using only 0..k-1 in the middle
+
+    Adding vertex k either helps or it does not:
+
+        dist[k+1][u][v] = min(dist[k][u][v],                 # skip k
+                              dist[k][u][k] + dist[k][k][v]) # route through k
+
+    The k dimension can be dropped entirely - updating in place is safe because
+    dist[u][k] and dist[k][v] are never improved by k itself (that would need a
+    negative cycle). Hence three loops with k OUTERMOST. Swapping the loop order
+    is the classic bug: it computes paths that use k before k is finished.
+
+    Handles negative edges. A negative cycle shows up as dist[v][v] < 0.
+
+    When to use it over |V| runs of Dijkstra:
+      - negative edges present (Dijkstra cannot)
+      - dense graph: O(V^3) beats O(V * E log V) once E approaches V^2
+      - you want the code to be six lines
+    """
+    n = len(matrix)
+    dist = [row[:] for row in matrix]       # copy: never mutate the input
+
+    for k in range(n):                      # k OUTERMOST - see docstring
+        for u in range(n):
+            if dist[u][k] == float("inf"):  # no path into k, skip the row
+                continue
+            for v in range(n):
+                if dist[u][k] + dist[k][v] < dist[u][v]:
+                    dist[u][v] = dist[u][k] + dist[k][v]
+    return dist
+
+
+def transitive_closure(graph: dict[int, list[int]], n: int) -> list[list[bool]]:
+    """reachable[u][v] - can v be reached from u? O(V^3). Warshall's algorithm.
+
+    Floyd-Warshall with (min, +) replaced by (or, and): instead of "how short
+    is the path", just "is there one". The same triple loop, on booleans.
+
+    Note reachable[v][v] starts True - a vertex reaches itself by the empty
+    path. If you want "reachable by a non-empty path" (i.e. is v on a cycle),
+    start the diagonal False.
+    """
+    reachable = [[False] * n for _ in range(n)]
+    for u in range(n):
+        reachable[u][u] = True              # empty path
+        for v in graph.get(u, []):
+            reachable[u][v] = True
+
+    for k in range(n):
+        for u in range(n):
+            if not reachable[u][k]:
+                continue
+            for v in range(n):
+                if reachable[k][v]:
+                    reachable[u][v] = True
+    return reachable
+
+
+# ============================================================================
+# 9. Strongly connected components
+# ============================================================================
+def scc_kosaraju(graph: dict[int, list[int]], vertices: Iterable[int]) -> list[list[int]]:
+    """Strongly connected components of a DIRECTED graph. O(V + E).
+
+    An SCC is a maximal set of vertices where every one reaches every other.
+    Contracting each SCC to a single node turns any directed graph into a DAG -
+    the "condensation" - which is what makes 2-SAT and many DP-on-graph
+    problems tractable.
+
+    Kosaraju is two passes:
+
+      1. DFS the graph, pushing each vertex onto a stack when it FINISHES.
+         The stack now holds vertices in reverse finishing order.
+      2. DFS the REVERSED graph, popping start vertices off that stack. Each
+         tree found is exactly one SCC.
+
+    Why it works: reversing every edge leaves the SCCs unchanged (if u reaches
+    v and v reaches u, both still hold after reversal) but flips every edge
+    BETWEEN components. So in the second pass, starting from the component that
+    finished last, there is no way to escape into another component - the DFS
+    is trapped inside exactly one SCC.
+
+    Two linear passes, easy to remember. Tarjan below does it in one.
+    """
+    vertices = list(vertices)
+
+    # Pass 1: order by finishing time. Iterative to survive deep graphs.
+    visited: set[int] = set()
+    order: list[int] = []
+    for start in vertices:
+        if start in visited:
+            continue
+        stack = [(start, iter(graph.get(start, [])))]
+        visited.add(start)
+        while stack:
+            node, children = stack[-1]
+            for child in children:
+                if child not in visited:
+                    visited.add(child)
+                    stack.append((child, iter(graph.get(child, []))))
+                    break
+            else:
+                order.append(node)          # all children done: node FINISHES
+                stack.pop()
+
+    # Reverse every edge.
+    reversed_graph: dict[int, list[int]] = defaultdict(list)
+    for u in vertices:
+        for v in graph.get(u, []):
+            reversed_graph[v].append(u)
+
+    # Pass 2: DFS the reversal in reverse finishing order.
+    seen: set[int] = set()
+    components: list[list[int]] = []
+    for start in reversed(order):
+        if start in seen:
+            continue
+        component: list[int] = []
+        stack = [start]
+        seen.add(start)
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            for neighbour in reversed_graph[node]:
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        components.append(sorted(component))
+    return components
+
+
+def scc_tarjan(graph: dict[int, list[int]], vertices: Iterable[int]) -> list[list[int]]:
+    """Strongly connected components in ONE DFS pass. O(V + E).
+
+    Each vertex gets two numbers:
+      - index:   when it was first visited (a timestamp)
+      - lowlink: the smallest index reachable from its subtree, following at
+                 most one edge back to a vertex still ON THE STACK
+
+    A vertex with lowlink == index is the ROOT of an SCC: nothing in its
+    subtree found a way back above it, so everything still stacked above it
+    forms exactly one component.
+
+    The "still on the stack" test is the entire subtlety. An edge to an already
+    finished vertex leads to an SCC that was already closed off - following it
+    would wrongly merge two components. The on_stack set distinguishes a
+    back-edge (same component) from a cross-edge (different, finished one).
+
+    One pass instead of Kosaraju's two, and it emits components in reverse
+    topological order of the condensation for free.
+    """
+    index_of: dict[int, int] = {}
+    lowlink: dict[int, int] = {}
+    on_stack: set[int] = set()
+    stack: list[int] = []
+    components: list[list[int]] = []
+    counter = 0
+
+    for root in vertices:
+        if root in index_of:
+            continue
+
+        # Iterative DFS: (node, iterator over its children).
+        work: list[tuple[int, Iterable[int]]] = [(root, iter(graph.get(root, [])))]
+        index_of[root] = lowlink[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+
+        while work:
+            node, children = work[-1]
+            advanced = False
+            for child in children:
+                if child not in index_of:               # tree edge: descend
+                    index_of[child] = lowlink[child] = counter
+                    counter += 1
+                    stack.append(child)
+                    on_stack.add(child)
+                    work.append((child, iter(graph.get(child, []))))
+                    advanced = True
+                    break
+                if child in on_stack:                   # back edge, same SCC
+                    lowlink[node] = min(lowlink[node], index_of[child])
+                # else: cross edge into a CLOSED component - ignore it
+            if advanced:
+                continue
+
+            work.pop()
+            if work:                                    # propagate to the parent
+                parent = work[-1][0]
+                lowlink[parent] = min(lowlink[parent], lowlink[node])
+
+            if lowlink[node] == index_of[node]:          # node roots an SCC
+                component: list[int] = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                components.append(sorted(component))
+
+    return components
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -500,7 +718,126 @@ def demo() -> None:
     assert shortest_path_grid(maze) == 5
     assert shortest_path_grid([[0, 1], [1, 0]]) == -1     # blocked
 
+    # --- Floyd-Warshall ------------------------------------------------------
+    INF = float("inf")
+    #  0 -> 1 (3), 1 -> 2 (1), 0 -> 2 (7), 2 -> 0 (2)
+    weights: list[list[float]] = [
+        [0, 3, 7],
+        [INF, 0, 1],
+        [2, INF, 0],
+    ]
+    apsp = floyd_warshall(weights)
+    assert apsp[0][2] == 4                  # 0->1->2 beats the direct 7
+    assert apsp[1][0] == 3                  # 1->2->0
+    assert weights[0][2] == 7               # input was not mutated
+
+    # Negative edges: Dijkstra would be wrong here, Floyd-Warshall is not.
+    negative: list[list[float]] = [
+        [0, 4, INF],
+        [INF, 0, -3],
+        [INF, INF, 0],
+    ]
+    assert floyd_warshall(negative)[0][2] == 1      # 4 + (-3)
+
+    # A negative cycle shows up on the diagonal.
+    cycle: list[list[float]] = [[0, 1, INF], [INF, 0, -5], [3, INF, 0]]
+    assert floyd_warshall(cycle)[0][0] < 0
+
+    # Against Dijkstra from every source, on random non-negative graphs.
+    random.seed(14)
+    for _ in range(40):
+        n = random.randint(1, 12)
+        dense: list[list[float]] = [[0 if u == v else INF for v in range(n)]
+                                    for u in range(n)]
+        weighted: dict[int, list[tuple[int, int]]] = defaultdict(list)
+        for u in range(n):
+            for v in range(n):
+                if u != v and random.random() < 0.35:
+                    w = random.randint(1, 20)
+                    dense[u][v] = min(dense[u][v], w)
+                    weighted[u].append((v, w))
+
+        all_pairs = floyd_warshall(dense)
+        for source in range(n):
+            single = dijkstra(weighted, source)
+            for target in range(n):
+                expected = single.get(target, INF)
+                assert all_pairs[source][target] == expected
+
+    # --- Transitive closure --------------------------------------------------
+    directed = {0: [1], 1: [2], 2: [0], 3: [2]}
+    closure = transitive_closure(directed, 4)
+    assert closure[0][2] and closure[2][1]          # around the cycle
+    assert closure[3][0] and not closure[0][3]      # 3 is a one-way entrance
+    assert all(closure[v][v] for v in range(4))     # empty path
+
+    # Against BFS reachability on random graphs.
+    for _ in range(40):
+        n = random.randint(1, 12)
+        adjacency: dict[int, list[int]] = defaultdict(list)
+        for u in range(n):
+            for v in range(n):
+                if u != v and random.random() < 0.25:
+                    adjacency[u].append(v)
+
+        reach = transitive_closure(adjacency, n)
+        for source in range(n):
+            expected = set(bfs(adjacency, source))
+            for target in range(n):
+                assert reach[source][target] == (target in expected)
+
+    # --- Strongly connected components ---------------------------------------
+    #  0 -> 1 -> 2 -> 0   (one SCC),  3 -> 2  and  3 -> 4  (singletons)
+    scc_graph = {0: [1], 1: [2], 2: [0], 3: [2, 4], 4: []}
+    expected_sccs = [[0, 1, 2], [3], [4]]
+    assert sorted(scc_kosaraju(scc_graph, range(5))) == expected_sccs
+    assert sorted(scc_tarjan(scc_graph, range(5))) == expected_sccs
+
+    # A DAG has one component per vertex; a full cycle has exactly one.
+    dag = {0: [1, 2], 1: [3], 2: [3], 3: []}
+    assert sorted(scc_tarjan(dag, range(4))) == [[0], [1], [2], [3]]
+    ring = {i: [(i + 1) % 6] for i in range(6)}
+    assert scc_tarjan(ring, range(6)) == [[0, 1, 2, 3, 4, 5]]
+
+    # Both algorithms against the DEFINITION, via the transitive closure:
+    # u and v share an SCC exactly when each reaches the other.
+    for _ in range(60):
+        n = random.randint(1, 11)
+        adjacency = defaultdict(list)
+        for u in range(n):
+            for v in range(n):
+                if u != v and random.random() < 0.22:
+                    adjacency[u].append(v)
+
+        reach = transitive_closure(adjacency, n)
+        groups: dict[tuple[int, ...], list[int]] = {}
+        for v in range(n):
+            key = tuple(u for u in range(n) if reach[u][v] and reach[v][u])
+            groups.setdefault(key, []).append(v)
+        brute = sorted(sorted(members) for members in groups.values())
+
+        assert sorted(scc_kosaraju(adjacency, range(n))) == brute
+        assert sorted(scc_tarjan(adjacency, range(n))) == brute
+
+    # Tarjan emits components in reverse topological order of the condensation:
+    # every edge leaving a component points to one emitted EARLIER.
+    for _ in range(30):
+        n = random.randint(2, 10)
+        adjacency = defaultdict(list)
+        for u in range(n):
+            for v in range(n):
+                if u != v and random.random() < 0.22:
+                    adjacency[u].append(v)
+
+        order = scc_tarjan(adjacency, range(n))
+        component_of = {v: i for i, members in enumerate(order) for v in members}
+        for u in range(n):
+            for v in adjacency[u]:
+                assert component_of[v] <= component_of[u]
+
     print("14-Graphs (Python): all checks passed")
+    print("  Floyd-Warshall cross-checked against Dijkstra from every source,")
+    print("  Kosaraju and Tarjan against the transitive-closure definition")
 
 
 if __name__ == "__main__":

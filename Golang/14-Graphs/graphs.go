@@ -1,5 +1,6 @@
 // 14 - Graphs: representations, BFS/DFS, cycle detection, topological sort,
-// Dijkstra, Bellman-Ford, and grids as implicit graphs.
+// Dijkstra, Bellman-Ford, Floyd-Warshall, strongly connected components
+// (Kosaraju and Tarjan), and grids as implicit graphs.
 //
 // Run:  go run graphs.go
 package main
@@ -8,6 +9,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 )
 
@@ -439,7 +441,268 @@ func BellmanFord(n int, edges []WeightedEdge, start int) ([]int, bool) {
 }
 
 // ============================================================================
-// 7. Grids as implicit graphs
+// 7. All-pairs shortest paths
+// ============================================================================
+
+// FloydWarshall returns the shortest path between EVERY pair of vertices.
+// O(V^3) time, O(V^2) space.
+//
+// Input is an adjacency matrix where matrix[u][v] is the edge weight and INF
+// means "no edge". Returns a NEW matrix; the caller's is untouched.
+//
+// A DP over which vertices may be used as intermediates:
+//
+//	dist[k][u][v] = shortest u->v path using only 0..k-1 in the middle
+//
+// Adding vertex k either helps or it does not:
+//
+//	dist[k+1][u][v] = min(dist[k][u][v],                  // skip k
+//	                      dist[k][u][k] + dist[k][k][v])  // route through k
+//
+// The k dimension drops out entirely - updating in place is safe because
+// dist[u][k] and dist[k][v] are never improved by k itself (that would require
+// a negative cycle). Hence three loops with k OUTERMOST. Reordering them is the
+// classic bug: it uses k before k is finished.
+//
+// Handles negative edges. A negative cycle shows as dist[v][v] < 0.
+//
+// Prefer it over |V| runs of Dijkstra when weights can be negative, when the
+// graph is dense (V^3 beats V*E log V once E approaches V^2), or when you want
+// six lines instead of sixty.
+func FloydWarshall(matrix [][]int) [][]int {
+	n := len(matrix)
+	dist := make([][]int, n)
+	for i := range dist {
+		dist[i] = append([]int(nil), matrix[i]...) // copy, do not alias
+	}
+
+	for k := 0; k < n; k++ { // k OUTERMOST - see above
+		for u := 0; u < n; u++ {
+			if dist[u][k] >= INF {
+				continue // no path into k, skip the row
+			}
+			for v := 0; v < n; v++ {
+				if dist[k][v] < INF && dist[u][k]+dist[k][v] < dist[u][v] {
+					dist[u][v] = dist[u][k] + dist[k][v]
+				}
+			}
+		}
+	}
+	return dist
+}
+
+// TransitiveClosure answers "can v be reached from u?" for every pair. O(V^3).
+//
+// Warshall's algorithm: Floyd-Warshall with (min, +) replaced by (or, and).
+// Instead of "how short is the path", just "is there one". Same triple loop, on
+// booleans.
+//
+// reachable[v][v] starts true - a vertex reaches itself by the empty path. For
+// "reachable by a NON-empty path" (i.e. is v on a cycle), start it false.
+func TransitiveClosure(adj AdjList) [][]bool {
+	n := len(adj)
+	reachable := make([][]bool, n)
+	for u := range reachable {
+		reachable[u] = make([]bool, n)
+		reachable[u][u] = true // empty path
+		for _, v := range adj[u] {
+			reachable[u][v] = true
+		}
+	}
+
+	for k := 0; k < n; k++ {
+		for u := 0; u < n; u++ {
+			if !reachable[u][k] {
+				continue
+			}
+			for v := 0; v < n; v++ {
+				if reachable[k][v] {
+					reachable[u][v] = true
+				}
+			}
+		}
+	}
+	return reachable
+}
+
+// ============================================================================
+// 8. Strongly connected components
+// ============================================================================
+
+// SCCKosaraju returns the strongly connected components of a directed graph.
+// O(V + E).
+//
+// An SCC is a maximal set of vertices where every one reaches every other.
+// Contracting each SCC to a single node turns any directed graph into a DAG -
+// the "condensation" - which is what makes 2-SAT and DP-on-graphs tractable.
+//
+// Two passes:
+//
+//  1. DFS the graph, pushing each vertex when it FINISHES. The stack now
+//     holds vertices in reverse finishing order.
+//  2. DFS the REVERSED graph, taking start vertices off that stack. Each
+//     tree found is exactly one SCC.
+//
+// Why it works: reversing every edge leaves the SCCs unchanged (if u reaches v
+// and v reaches u, both still hold after reversal) but flips every edge BETWEEN
+// components. So the second pass, starting from the component that finished
+// last, cannot escape into another component - the DFS is trapped inside
+// exactly one SCC.
+func SCCKosaraju(adj AdjList) [][]int {
+	n := len(adj)
+
+	// Pass 1: order by finishing time. Iterative, to survive deep graphs.
+	type frame struct{ node, next int }
+	visited := make([]bool, n)
+	order := make([]int, 0, n)
+
+	for start := 0; start < n; start++ {
+		if visited[start] {
+			continue
+		}
+		visited[start] = true
+		stack := []frame{{start, 0}}
+		for len(stack) > 0 {
+			top := &stack[len(stack)-1]
+			if top.next < len(adj[top.node]) {
+				child := adj[top.node][top.next]
+				top.next++
+				if !visited[child] {
+					visited[child] = true
+					stack = append(stack, frame{child, 0})
+				}
+			} else {
+				order = append(order, top.node) // all children done: FINISHES
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+
+	reversed := make(AdjList, n) // flip every edge
+	for u := 0; u < n; u++ {
+		for _, v := range adj[u] {
+			reversed[v] = append(reversed[v], u)
+		}
+	}
+
+	// Pass 2: DFS the reversal in reverse finishing order.
+	seen := make([]bool, n)
+	components := [][]int{}
+	for i := len(order) - 1; i >= 0; i-- {
+		if seen[order[i]] {
+			continue
+		}
+		component := []int{}
+		todo := []int{order[i]}
+		seen[order[i]] = true
+		for len(todo) > 0 {
+			node := todo[len(todo)-1]
+			todo = todo[:len(todo)-1]
+			component = append(component, node)
+			for _, neighbour := range reversed[node] {
+				if !seen[neighbour] {
+					seen[neighbour] = true
+					todo = append(todo, neighbour)
+				}
+			}
+		}
+		sort.Ints(component)
+		components = append(components, component)
+	}
+	return components
+}
+
+// SCCTarjan returns the strongly connected components in ONE DFS pass. O(V + E).
+//
+// Each vertex gets two numbers:
+//
+//	index   - when it was first visited (a timestamp)
+//	lowlink - the smallest index reachable from its subtree, following at most
+//	          one edge back to a vertex still ON THE STACK
+//
+// A vertex with lowlink == index ROOTS an SCC: nothing in its subtree found a
+// way back above it, so everything still stacked above it forms exactly one
+// component.
+//
+// The "still on the stack" test is the entire subtlety. An edge into an already
+// finished vertex leads to a CLOSED component; following it would wrongly merge
+// two SCCs. onStack distinguishes a back edge (same component) from a cross
+// edge (a different, finished one).
+//
+// One pass instead of Kosaraju's two, and it emits components in reverse
+// topological order of the condensation for free.
+func SCCTarjan(adj AdjList) [][]int {
+	n := len(adj)
+	index := make([]int, n)
+	lowlink := make([]int, n)
+	onStack := make([]bool, n)
+	for i := range index {
+		index[i] = -1
+	}
+
+	stack := []int{}
+	components := [][]int{}
+	counter := 0
+
+	type frame struct{ node, next int }
+
+	for root := 0; root < n; root++ {
+		if index[root] != -1 {
+			continue
+		}
+
+		index[root], lowlink[root] = counter, counter
+		counter++
+		stack = append(stack, root)
+		onStack[root] = true
+		work := []frame{{root, 0}}
+
+		for len(work) > 0 {
+			top := &work[len(work)-1]
+			if top.next < len(adj[top.node]) {
+				child := adj[top.node][top.next]
+				top.next++
+				if index[child] == -1 { // tree edge: descend
+					index[child], lowlink[child] = counter, counter
+					counter++
+					stack = append(stack, child)
+					onStack[child] = true
+					work = append(work, frame{child, 0})
+				} else if onStack[child] { // back edge, same SCC
+					lowlink[top.node] = min(lowlink[top.node], index[child])
+				}
+				// else: cross edge into a CLOSED component - ignore it
+				continue
+			}
+
+			finished := top.node
+			work = work[:len(work)-1]
+			if len(work) > 0 { // propagate to the parent
+				parent := work[len(work)-1].node
+				lowlink[parent] = min(lowlink[parent], lowlink[finished])
+			}
+
+			if lowlink[finished] == index[finished] { // roots an SCC
+				component := []int{}
+				for {
+					member := stack[len(stack)-1]
+					stack = stack[:len(stack)-1]
+					onStack[member] = false
+					component = append(component, member)
+					if member == finished {
+						break
+					}
+				}
+				sort.Ints(component)
+				components = append(components, component)
+			}
+		}
+	}
+	return components
+}
+
+// ============================================================================
+// 9. Grids as implicit graphs
 // ============================================================================
 
 var dr = []int{0, 0, 1, -1}
@@ -518,6 +781,16 @@ func ShortestPathGrid(grid [][]int) int {
 // ============================================================================
 // demo
 // ============================================================================
+
+// sortComponents orders a component list by its first vertex, so two runs are
+// comparable. Map iteration order is randomised in Go and both SCC algorithms
+// emit components in their own order, so nothing is comparable without this.
+func sortComponents(components [][]int) [][]int {
+	sort.Slice(components, func(i, j int) bool {
+		return components[i][0] < components[j][0]
+	})
+	return components
+}
 
 func assert(cond bool, msg string) {
 	if !cond {
@@ -643,5 +916,180 @@ func main() {
 	assert(ShortestPathGrid(maze) == 5, "maze path length")
 	assert(ShortestPathGrid([][]int{{0, 1}, {1, 0}}) == -1, "blocked maze")
 
+	// --- Floyd-Warshall ------------------------------------------------------
+	//  0 -> 1 (3), 1 -> 2 (1), 0 -> 2 (7), 2 -> 0 (2)
+	weightMatrix := [][]int{
+		{0, 3, 7},
+		{INF, 0, 1},
+		{2, INF, 0},
+	}
+	apsp := FloydWarshall(weightMatrix)
+	assert(apsp[0][2] == 4, "0->1->2 beats the direct edge")
+	assert(apsp[1][0] == 3, "1->2->0")
+	assert(weightMatrix[0][2] == 7, "input matrix was not mutated")
+
+	// Negative edges: Dijkstra would be wrong here, Floyd-Warshall is not.
+	negativeMatrix := [][]int{{0, 4, INF}, {INF, 0, -3}, {INF, INF, 0}}
+	assert(FloydWarshall(negativeMatrix)[0][2] == 1, "4 + (-3) == 1")
+
+	// A negative cycle shows up on the diagonal.
+	cycleMatrix := [][]int{{0, 1, INF}, {INF, 0, -5}, {3, INF, 0}}
+	assert(FloydWarshall(cycleMatrix)[0][0] < 0, "negative cycle on the diagonal")
+
+	// Against Dijkstra from every source, on random non-negative graphs.
+	rng := rand.New(rand.NewSource(14))
+	for trial := 0; trial < 40; trial++ {
+		n := rng.Intn(12) + 1
+		dense := make([][]int, n)
+		weightedRandom := make(WeightedAdj, n)
+		for u := 0; u < n; u++ {
+			dense[u] = make([]int, n)
+			for v := 0; v < n; v++ {
+				if u != v {
+					dense[u][v] = INF
+				}
+			}
+		}
+		for u := 0; u < n; u++ {
+			for v := 0; v < n; v++ {
+				if u != v && rng.Float64() < 0.35 {
+					w := rng.Intn(20) + 1
+					dense[u][v] = min(dense[u][v], w)
+					weightedRandom[u] = append(weightedRandom[u], Edge{v, w})
+				}
+			}
+		}
+
+		allPairs := FloydWarshall(dense)
+		for source := 0; source < n; source++ {
+			single := Dijkstra(weightedRandom, source)
+			for target := 0; target < n; target++ {
+				assert(allPairs[source][target] == single[target],
+					"Floyd-Warshall agrees with Dijkstra")
+			}
+		}
+	}
+
+	// --- Transitive closure --------------------------------------------------
+	reachGraph := AdjList{{1}, {2}, {0}, {2}} // 0->1->2->0, and 3->2
+	closure := TransitiveClosure(reachGraph)
+	assert(closure[0][2] && closure[2][1], "reachable around the cycle")
+	assert(closure[3][0] && !closure[0][3], "3 is a one-way entrance")
+	for v := 0; v < 4; v++ {
+		assert(closure[v][v], "a vertex reaches itself by the empty path")
+	}
+
+	// Against BFS reachability on random graphs.
+	for trial := 0; trial < 40; trial++ {
+		n := rng.Intn(12) + 1
+		adjacency := make(AdjList, n)
+		for u := 0; u < n; u++ {
+			for v := 0; v < n; v++ {
+				if u != v && rng.Float64() < 0.25 {
+					adjacency[u] = append(adjacency[u], v)
+				}
+			}
+		}
+
+		reach := TransitiveClosure(adjacency)
+		for source := 0; source < n; source++ {
+			expected := make([]bool, n)
+			for _, v := range BFS(adjacency, source) {
+				expected[v] = true
+			}
+			for target := 0; target < n; target++ {
+				assert(reach[source][target] == expected[target],
+					"closure agrees with BFS reachability")
+			}
+		}
+	}
+
+	// --- Strongly connected components ---------------------------------------
+	//  0 -> 1 -> 2 -> 0 (one SCC), 3 -> 2 and 3 -> 4 (singletons)
+	sccGraph := AdjList{{1}, {2}, {0}, {2, 4}, {}}
+	const expectedSccs = "[[0 1 2] [3] [4]]"
+	assert(fmt.Sprint(sortComponents(SCCKosaraju(sccGraph))) == expectedSccs,
+		"Kosaraju finds the cycle and two singletons")
+	assert(fmt.Sprint(sortComponents(SCCTarjan(sccGraph))) == expectedSccs,
+		"Tarjan agrees")
+
+	// A DAG has one component per vertex; a full cycle has exactly one.
+	dagGraph := AdjList{{1, 2}, {3}, {3}, {}}
+	assert(fmt.Sprint(sortComponents(SCCTarjan(dagGraph))) == "[[0] [1] [2] [3]]",
+		"a DAG is all singletons")
+
+	ring := make(AdjList, 6)
+	for i := 0; i < 6; i++ {
+		ring[i] = []int{(i + 1) % 6}
+	}
+	assert(fmt.Sprint(SCCTarjan(ring)) == "[[0 1 2 3 4 5]]", "a ring is one SCC")
+
+	// Both algorithms against the DEFINITION, via the transitive closure:
+	// u and v share an SCC exactly when each reaches the other.
+	for trial := 0; trial < 60; trial++ {
+		n := rng.Intn(11) + 1
+		adjacency := make(AdjList, n)
+		for u := 0; u < n; u++ {
+			for v := 0; v < n; v++ {
+				if u != v && rng.Float64() < 0.22 {
+					adjacency[u] = append(adjacency[u], v)
+				}
+			}
+		}
+
+		reach := TransitiveClosure(adjacency)
+		groups := map[string][]int{}
+		for v := 0; v < n; v++ {
+			key := []int{}
+			for u := 0; u < n; u++ {
+				if reach[u][v] && reach[v][u] {
+					key = append(key, u)
+				}
+			}
+			id := fmt.Sprint(key)
+			groups[id] = append(groups[id], v)
+		}
+		brute := [][]int{}
+		for _, members := range groups {
+			brute = append(brute, members) // already ascending
+		}
+		expected := fmt.Sprint(sortComponents(brute))
+
+		assert(fmt.Sprint(sortComponents(SCCKosaraju(adjacency))) == expected,
+			"Kosaraju matches the definition")
+		assert(fmt.Sprint(sortComponents(SCCTarjan(adjacency))) == expected,
+			"Tarjan matches the definition")
+	}
+
+	// Tarjan emits components in reverse topological order of the condensation:
+	// every edge leaving a component points to one emitted EARLIER.
+	for trial := 0; trial < 30; trial++ {
+		n := rng.Intn(9) + 2
+		adjacency := make(AdjList, n)
+		for u := 0; u < n; u++ {
+			for v := 0; v < n; v++ {
+				if u != v && rng.Float64() < 0.22 {
+					adjacency[u] = append(adjacency[u], v)
+				}
+			}
+		}
+
+		order := SCCTarjan(adjacency)
+		componentOf := make([]int, n)
+		for i, members := range order {
+			for _, v := range members {
+				componentOf[v] = i
+			}
+		}
+		for u := 0; u < n; u++ {
+			for _, v := range adjacency[u] {
+				assert(componentOf[v] <= componentOf[u],
+					"Tarjan emits in reverse topological order")
+			}
+		}
+	}
+
 	fmt.Println("14-Graphs (Go): all checks passed")
+	fmt.Println("  Floyd-Warshall cross-checked against Dijkstra from every source,")
+	fmt.Println("  Kosaraju and Tarjan against the transitive-closure definition")
 }

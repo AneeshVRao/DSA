@@ -99,6 +99,7 @@ while queue:
 | Connected components | BFS/DFS from each unvisited vertex | `O(V + E)` |
 | Two-colourable? | BFS/DFS colouring | `O(V + E)` |
 | Cheapest spanning tree | Kruskal (union-find) or Prim (heap) | `O(E log E)` |
+| Strongly connected components | **Kosaraju** or **Tarjan** | `O(V + E)` |
 
 ---
 
@@ -121,7 +122,67 @@ sort in disguise.
 
 ---
 
-## 6. Grids are graphs
+## 6. All pairs, and strongly connected components
+
+### Floyd-Warshall - every pair at once
+
+A DP over *which vertices may sit in the middle of the path*:
+
+```text
+dist[k][u][v] = shortest u->v path using only vertices 0..k-1 as intermediates
+
+dist[k+1][u][v] = min( dist[k][u][v],                    skip k
+                       dist[k][u][k] + dist[k][k][v] )   route through k
+```
+
+The `k` dimension drops out - the update is safe in place - leaving three loops
+and `O(V^3)`.
+
+> **`k` must be the outermost loop.** Swapping the loop order is the single most
+> common bug here: it computes paths through `k` before `k` itself is finished.
+
+Handles negative edges (Dijkstra cannot), and a **negative cycle** announces
+itself as `dist[v][v] < 0`. Choose it over `V` runs of Dijkstra when weights can
+be negative, when the graph is dense (`V^3` beats `V*E log V` once `E` nears
+`V^2`), or when you want six lines instead of sixty.
+
+**Warshall's transitive closure** is the same triple loop with `(min, +)`
+replaced by `(or, and)` - "is there a path" instead of "how short is it".
+
+### Strongly connected components
+
+An **SCC** is a maximal set of vertices where every one reaches every other.
+Contract each SCC to a single node and *any* directed graph becomes a DAG - the
+**condensation**. That is why SCCs underpin 2-SAT, deadlock detection and most
+DP-on-a-cyclic-graph problems: find the components, then DP on the DAG.
+
+| | Kosaraju | Tarjan |
+|---|----------|--------|
+| Passes | 2 (needs the reversed graph) | **1** |
+| Extra memory | the reversal, `O(V + E)` | two ints per vertex |
+| Output order | arbitrary | reverse topological order of the condensation |
+| To remember | easier | fiddlier |
+
+**Kosaraju.** DFS once, pushing each vertex as it *finishes*. Then DFS the
+**reversed** graph, taking starts off that stack. Reversing edges leaves SCCs
+unchanged (if `u` reaches `v` and `v` reaches `u`, both survive reversal) but
+flips every edge *between* components - so the second pass, beginning at the
+component that finished last, cannot escape, and each tree it finds is exactly
+one SCC.
+
+**Tarjan.** Give each vertex an `index` (visit timestamp) and a `lowlink` (the
+smallest index reachable from its subtree using at most one back edge). A vertex
+with `lowlink == index` **roots** an SCC - nothing below it found a way higher -
+so everything stacked above it pops off as one component.
+
+> The whole subtlety is the **on-stack** test. An edge into an already *finished*
+> vertex leads to a component that is already closed; following it would merge
+> two distinct SCCs. `on_stack` is what separates a back edge (same component)
+> from a cross edge (a different, finished one).
+
+---
+
+## 7. Grids are graphs
 
 A 2-D grid is an implicit graph: each cell is a vertex, and its up/down/left/
 right neighbours are edges. Islands, flood fill, shortest path in a maze and
@@ -135,7 +196,7 @@ No adjacency list needed - the coordinates *are* the graph.
 
 ---
 
-## 7. Complexity of what is implemented here
+## 8. Complexity of what is implemented here
 
 | Function | Time | Space |
 |----------|------|-------|
@@ -147,6 +208,9 @@ No adjacency list needed - the coordinates *are* the graph.
 | `is_bipartite` | `O(V + E)` | `O(V)` |
 | `dijkstra` | `O(E log V)` | `O(V)` |
 | `bellman_ford` | `O(V * E)` | `O(V)` |
+| `floyd_warshall` | `O(V^3)` | `O(V^2)` |
+| `transitive_closure` | `O(V^3)` | `O(V^2)` |
+| `scc_kosaraju` / `scc_tarjan` | `O(V + E)` | `O(V + E)` |
 | `count_islands` | `O(rows * cols)` | `O(rows * cols)` |
 
 ## Run the code

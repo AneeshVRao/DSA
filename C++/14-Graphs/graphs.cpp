@@ -1,5 +1,6 @@
 // 14 - Graphs: representations, BFS/DFS, cycle detection, topological sort,
-// Dijkstra, Bellman-Ford, and grids as implicit graphs.
+// Dijkstra, Bellman-Ford, Floyd-Warshall, strongly connected components
+// (Kosaraju and Tarjan), and grids as implicit graphs.
 //
 // Build & run:
 //   g++ -std=c++17 -O2 -Wall graphs.cpp -o graphs && ./graphs
@@ -9,8 +10,11 @@
 #include <cassert>
 #include <climits>
 #include <iostream>
+#include <map>
 #include <queue>
+#include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std;
@@ -386,6 +390,221 @@ int shortestPathGrid(const vector<vector<int>>& grid) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 8. All-pairs shortest paths
+// ============================================================================
+// Floyd-Warshall: shortest path between EVERY pair. O(V^3) time, O(V^2) space.
+//
+// A DP over which vertices may be used as intermediates:
+//
+//     dist[k][u][v] = shortest u->v path using only 0..k-1 in the middle
+//
+// Adding vertex k either helps or it does not:
+//
+//     dist[k+1][u][v] = min(dist[k][u][v],                  // skip k
+//                           dist[k][u][k] + dist[k][k][v])  // route through k
+//
+// The k dimension drops out entirely - updating in place is safe because
+// dist[u][k] and dist[k][v] are never improved by k itself (that would require
+// a negative cycle). Hence three loops with k OUTERMOST. Reordering the loops
+// is the classic bug: it uses k before k is finished.
+//
+// Handles negative edges. A negative cycle shows as dist[v][v] < 0.
+//
+// Prefer it over |V| runs of Dijkstra when weights can be negative, when the
+// graph is dense (V^3 beats V*E log V once E approaches V^2), or when you want
+// six lines instead of sixty.
+vector<vector<long long>> floydWarshall(vector<vector<long long>> dist) {
+    int n = int(dist.size());
+
+    for (int k = 0; k < n; k++) {           // k OUTERMOST - see above
+        for (int u = 0; u < n; u++) {
+            if (dist[u][k] >= INF) continue;  // no path into k, skip the row
+            for (int v = 0; v < n; v++) {
+                if (dist[k][v] < INF && dist[u][k] + dist[k][v] < dist[u][v]) {
+                    dist[u][v] = dist[u][k] + dist[k][v];
+                }
+            }
+        }
+    }
+    return dist;  // taken by value, so the caller's matrix is untouched
+}
+
+// Warshall's transitive closure: can v be reached from u? O(V^3).
+//
+// Floyd-Warshall with (min, +) replaced by (or, and) - instead of "how short is
+// the path", just "is there one". Same triple loop, on booleans.
+//
+// reachable[v][v] starts true: a vertex reaches itself by the empty path. For
+// "reachable by a NON-empty path" (i.e. is v on a cycle), start it false.
+vector<vector<char>> transitiveClosure(const AdjList& adj) {
+    int n = int(adj.size());
+    vector<vector<char>> reachable(n, vector<char>(n, 0));
+
+    for (int u = 0; u < n; u++) {
+        reachable[u][u] = 1;                // empty path
+        for (int v : adj[u]) reachable[u][v] = 1;
+    }
+
+    for (int k = 0; k < n; k++) {
+        for (int u = 0; u < n; u++) {
+            if (!reachable[u][k]) continue;
+            for (int v = 0; v < n; v++) {
+                if (reachable[k][v]) reachable[u][v] = 1;
+            }
+        }
+    }
+    return reachable;
+}
+
+// ============================================================================
+// 9. Strongly connected components
+// ============================================================================
+// An SCC is a maximal set of vertices where every one reaches every other.
+// Contracting each SCC to a node turns any directed graph into a DAG - the
+// "condensation" - which is what makes 2-SAT and DP-on-graphs tractable.
+//
+// KOSARAJU, two passes:
+//   1. DFS the graph, pushing each vertex when it FINISHES. The stack now holds
+//      vertices in reverse finishing order.
+//   2. DFS the REVERSED graph, taking start vertices off that stack. Each tree
+//      found is exactly one SCC.
+//
+// Why: reversing every edge leaves SCCs unchanged (u reaches v and v reaches u
+// both survive reversal) but flips every edge BETWEEN components. So the second
+// pass, starting from the component that finished last, cannot escape into
+// another component - the DFS is trapped inside exactly one SCC.
+vector<vector<int>> sccKosaraju(const AdjList& adj) {
+    int n = int(adj.size());
+
+    // Pass 1: order by finishing time. Iterative, to survive deep graphs.
+    vector<char> visited(n, 0);
+    vector<int> order;
+    vector<pair<int, size_t>> stack;  // {node, index of next child to try}
+
+    for (int start = 0; start < n; start++) {
+        if (visited[start]) continue;
+        visited[start] = 1;
+        stack.push_back({start, 0});
+        while (!stack.empty()) {
+            auto& [node, next] = stack.back();
+            if (next < adj[node].size()) {
+                int child = adj[node][next++];
+                if (!visited[child]) {
+                    visited[child] = 1;
+                    stack.push_back({child, 0});
+                }
+            } else {
+                order.push_back(node);   // all children done: node FINISHES
+                stack.pop_back();
+            }
+        }
+    }
+
+    AdjList reversed(n);                 // flip every edge
+    for (int u = 0; u < n; u++)
+        for (int v : adj[u]) reversed[v].push_back(u);
+
+    // Pass 2: DFS the reversal in reverse finishing order.
+    vector<char> seen(n, 0);
+    vector<vector<int>> components;
+    for (auto it = order.rbegin(); it != order.rend(); ++it) {
+        if (seen[*it]) continue;
+        vector<int> component;
+        vector<int> todo{*it};
+        seen[*it] = 1;
+        while (!todo.empty()) {
+            int node = todo.back();
+            todo.pop_back();
+            component.push_back(node);
+            for (int neighbour : reversed[node]) {
+                if (!seen[neighbour]) {
+                    seen[neighbour] = 1;
+                    todo.push_back(neighbour);
+                }
+            }
+        }
+        sort(component.begin(), component.end());
+        components.push_back(component);
+    }
+    return components;
+}
+
+// TARJAN: strongly connected components in ONE DFS pass. O(V + E).
+//
+// Each vertex gets two numbers:
+//   index   - when it was first visited (a timestamp)
+//   lowlink - the smallest index reachable from its subtree, following at most
+//             one edge back to a vertex still ON THE STACK
+//
+// A vertex with lowlink == index ROOTS an SCC: nothing in its subtree found a
+// way back above it, so everything stacked above it is exactly one component.
+//
+// The "still on the stack" test is the whole subtlety. An edge into an already
+// finished vertex leads to a CLOSED component; following it would wrongly merge
+// two SCCs. onStack distinguishes a back edge (same component) from a cross
+// edge (a different, finished one).
+//
+// One pass instead of Kosaraju's two, and it emits components in reverse
+// topological order of the condensation for free.
+vector<vector<int>> sccTarjan(const AdjList& adj) {
+    int n = int(adj.size());
+    vector<int> index(n, -1), lowlink(n, 0);
+    vector<char> onStack(n, 0);
+    vector<int> stack;
+    vector<vector<int>> components;
+    int counter = 0;
+
+    vector<pair<int, size_t>> work;  // {node, index of next child to try}
+
+    for (int root = 0; root < n; root++) {
+        if (index[root] != -1) continue;
+
+        index[root] = lowlink[root] = counter++;
+        stack.push_back(root);
+        onStack[root] = 1;
+        work.push_back({root, 0});
+
+        while (!work.empty()) {
+            auto& [node, next] = work.back();
+            if (next < adj[node].size()) {
+                int child = adj[node][next++];
+                if (index[child] == -1) {              // tree edge: descend
+                    index[child] = lowlink[child] = counter++;
+                    stack.push_back(child);
+                    onStack[child] = 1;
+                    work.push_back({child, 0});
+                } else if (onStack[child]) {           // back edge, same SCC
+                    lowlink[node] = min(lowlink[node], index[child]);
+                }
+                // else: cross edge into a CLOSED component - ignore it
+                continue;
+            }
+
+            int finished = node;
+            work.pop_back();
+            if (!work.empty()) {                       // propagate to the parent
+                int parent = work.back().first;
+                lowlink[parent] = min(lowlink[parent], lowlink[finished]);
+            }
+
+            if (lowlink[finished] == index[finished]) {  // roots an SCC
+                vector<int> component;
+                while (true) {
+                    int member = stack.back();
+                    stack.pop_back();
+                    onStack[member] = 0;
+                    component.push_back(member);
+                    if (member == finished) break;
+                }
+                sort(component.begin(), component.end());
+                components.push_back(component);
+            }
+        }
+    }
+    return components;
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -484,6 +703,156 @@ int main() {
     assert(shortestPathGrid(maze) == 5);
     assert(shortestPathGrid({{0, 1}, {1, 0}}) == -1);      // blocked
 
+    // --- Floyd-Warshall ------------------------------------------------------
+    //  0 -> 1 (3), 1 -> 2 (1), 0 -> 2 (7), 2 -> 0 (2)
+    vector<vector<long long>> weightMatrix{
+        {0, 3, 7},
+        {INF, 0, 1},
+        {2, INF, 0},
+    };
+    vector<vector<long long>> apsp = floydWarshall(weightMatrix);
+    assert(apsp[0][2] == 4);                     // 0->1->2 beats the direct 7
+    assert(apsp[1][0] == 3);                     // 1->2->0
+    assert(weightMatrix[0][2] == 7);             // input was not mutated
+
+    // Negative edges: Dijkstra would be wrong here, Floyd-Warshall is not.
+    vector<vector<long long>> negativeMatrix{{0, 4, INF}, {INF, 0, -3}, {INF, INF, 0}};
+    assert(floydWarshall(negativeMatrix)[0][2] == 1);      // 4 + (-3)
+
+    // A negative cycle shows up on the diagonal.
+    vector<vector<long long>> cycleMatrix{{0, 1, INF}, {INF, 0, -5}, {3, INF, 0}};
+    assert(floydWarshall(cycleMatrix)[0][0] < 0);
+
+    // Against Dijkstra from every source, on random non-negative graphs.
+    mt19937 rng(14);
+    auto chance = [&rng](double p) {
+        return (rng() % 1000) < static_cast<unsigned>(p * 1000);
+    };
+
+    for (int trial = 0; trial < 40; trial++) {
+        int n = int(rng() % 12) + 1;
+        vector<vector<long long>> dense(n, vector<long long>(n, INF));
+        WeightedAdj weightedRandom(n);
+        for (int u = 0; u < n; u++) dense[u][u] = 0;
+        for (int u = 0; u < n; u++) {
+            for (int v = 0; v < n; v++) {
+                if (u != v && chance(0.35)) {
+                    int w = int(rng() % 20) + 1;
+                    dense[u][v] = min(dense[u][v], static_cast<long long>(w));
+                    weightedRandom[u].push_back({v, w});
+                }
+            }
+        }
+
+        vector<vector<long long>> allPairs = floydWarshall(dense);
+        for (int source = 0; source < n; source++) {
+            vector<long long> single = dijkstra(weightedRandom, source);
+            for (int target = 0; target < n; target++) {
+                assert(allPairs[source][target] == single[target]);
+            }
+        }
+    }
+
+    // --- Transitive closure --------------------------------------------------
+    AdjList reachGraph{{1}, {2}, {0}, {2}};      // 0->1->2->0, and 3->2
+    vector<vector<char>> closure = transitiveClosure(reachGraph);
+    assert(closure[0][2] && closure[2][1]);      // around the cycle
+    assert(closure[3][0] && !closure[0][3]);     // 3 is a one-way entrance
+    for (int v = 0; v < 4; v++) assert(closure[v][v]);   // empty path
+
+    // Against BFS reachability on random graphs.
+    for (int trial = 0; trial < 40; trial++) {
+        int n = int(rng() % 12) + 1;
+        AdjList adjacency(n);
+        for (int u = 0; u < n; u++)
+            for (int v = 0; v < n; v++)
+                if (u != v && chance(0.25)) adjacency[u].push_back(v);
+
+        vector<vector<char>> reach = transitiveClosure(adjacency);
+        for (int source = 0; source < n; source++) {
+            vector<int> order = bfs(adjacency, source);
+            vector<char> expected(n, 0);
+            for (int v : order) expected[v] = 1;
+            for (int target = 0; target < n; target++) {
+                assert(reach[source][target] == expected[target]);
+            }
+        }
+    }
+
+    // --- Strongly connected components ---------------------------------------
+    //  0 -> 1 -> 2 -> 0 (one SCC), 3 -> 2 and 3 -> 4 (singletons)
+    AdjList sccGraph{{1}, {2}, {0}, {2, 4}, {}};
+    vector<vector<int>> expectedSccs{{0, 1, 2}, {3}, {4}};
+
+    vector<vector<int>> byKosaraju = sccKosaraju(sccGraph);
+    vector<vector<int>> byTarjan = sccTarjan(sccGraph);
+    sort(byKosaraju.begin(), byKosaraju.end());
+    sort(byTarjan.begin(), byTarjan.end());
+    assert(byKosaraju == expectedSccs);
+    assert(byTarjan == expectedSccs);
+
+    // A DAG has one component per vertex; a full cycle has exactly one.
+    AdjList dagGraph{{1, 2}, {3}, {3}, {}};
+    vector<vector<int>> dagSccs = sccTarjan(dagGraph);
+    sort(dagSccs.begin(), dagSccs.end());
+    assert((dagSccs == vector<vector<int>>{{0}, {1}, {2}, {3}}));
+
+    AdjList ring(6);
+    for (int i = 0; i < 6; i++) ring[i].push_back((i + 1) % 6);
+    assert((sccTarjan(ring) == vector<vector<int>>{{0, 1, 2, 3, 4, 5}}));
+
+    // Both algorithms against the DEFINITION, via the transitive closure:
+    // u and v share an SCC exactly when each reaches the other.
+    for (int trial = 0; trial < 60; trial++) {
+        int n = int(rng() % 11) + 1;
+        AdjList adjacency(n);
+        for (int u = 0; u < n; u++)
+            for (int v = 0; v < n; v++)
+                if (u != v && chance(0.22)) adjacency[u].push_back(v);
+
+        vector<vector<char>> reach = transitiveClosure(adjacency);
+        map<vector<int>, vector<int>> groups;
+        for (int v = 0; v < n; v++) {
+            vector<int> key;
+            for (int u = 0; u < n; u++)
+                if (reach[u][v] && reach[v][u]) key.push_back(u);
+            groups[key].push_back(v);
+        }
+        vector<vector<int>> brute;
+        for (auto& [key, members] : groups) {
+            (void)key;
+            brute.push_back(members);       // already ascending
+        }
+        sort(brute.begin(), brute.end());
+
+        vector<vector<int>> kosaraju = sccKosaraju(adjacency);
+        vector<vector<int>> tarjan = sccTarjan(adjacency);
+        sort(kosaraju.begin(), kosaraju.end());
+        sort(tarjan.begin(), tarjan.end());
+        assert(kosaraju == brute);
+        assert(tarjan == brute);
+    }
+
+    // Tarjan emits components in reverse topological order of the condensation:
+    // every edge leaving a component points to one emitted EARLIER.
+    for (int trial = 0; trial < 30; trial++) {
+        int n = int(rng() % 9) + 2;
+        AdjList adjacency(n);
+        for (int u = 0; u < n; u++)
+            for (int v = 0; v < n; v++)
+                if (u != v && chance(0.22)) adjacency[u].push_back(v);
+
+        vector<vector<int>> order = sccTarjan(adjacency);
+        vector<int> componentOf(n, -1);
+        for (size_t i = 0; i < order.size(); i++)
+            for (int v : order[i]) componentOf[v] = int(i);
+
+        for (int u = 0; u < n; u++)
+            for (int v : adjacency[u]) assert(componentOf[v] <= componentOf[u]);
+    }
+
     cout << "14-Graphs (C++): all checks passed\n";
+    cout << "  Floyd-Warshall cross-checked against Dijkstra from every source,\n";
+    cout << "  Kosaraju and Tarjan against the transitive-closure definition\n";
     return 0;
 }
