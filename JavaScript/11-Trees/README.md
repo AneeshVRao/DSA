@@ -152,6 +152,55 @@ and half of heavy-light decomposition.
 
 ---
 
+## Expression trees - the smallest real AST
+
+An expression tree is a binary tree whose leaves are numbers and whose internal
+nodes are operators. It is the smallest interesting **abstract syntax tree**,
+and it makes the three traversals mean something concrete:
+
+```text
+      *
+     / \        inorder    (3 + 4) * 2     needs brackets
+    +   2       postorder   3 4 + 2 *      needs none
+   / \         preorder    * + 3 4 2      needs none
+  3   4
+```
+
+**The tree carries precedence and grouping in its SHAPE.** That is why postfix
+and prefix are unambiguous without a single bracket, and why only infix needs
+them - infix is the notation that throws the structure away.
+
+### Getting there: shunting-yard
+
+Infix in, postfix out, one pass, `O(n)`. Numbers go straight to the output;
+operators wait on a stack until something of lower precedence arrives. That is
+the whole of "`*` binds tighter than `+`" - no lookahead, no recursion.
+
+> **Left associativity is a single character.** The pop condition uses `>=`, so
+> `8 - 3 - 2` becomes `(8-3)-2 = 3`. Change it to `>` and subtraction silently
+> becomes right-associative: `8-(3-2) = 7`. Both parse, both evaluate, one is
+> wrong.
+
+> **Shunting-yard does not validate.** Fed `+ 1 2` it happily emits `1 2 +` and
+> reports success - silently reinterpreting prefix input as infix. Tracking
+> whether an operand or an operator is expected next is what turns garbled input
+> into an error rather than a plausible wrong answer.
+
+### Building and evaluating
+
+From postfix the build is one stack pass: when an operator appears, both its
+operands are already complete subtrees waiting on the stack.
+
+> **Pop the RIGHT operand first** - it was pushed last. Get it backwards and the
+> tree still looks valid and still evaluates correctly for `+` and `*`; it
+> silently reverses `-` and `/`. A test using only commutative operators would
+> never catch it, so the demo checks `8 - 3` and `16 / 4 / 2` specifically.
+
+Evaluation is a **post-order fold**: children first, then combine - the same
+bottom-up shape as every other tree computation in this chapter.
+
+---
+
 ## Run the code
 
 ```bash

@@ -14,6 +14,13 @@ constraints and decide whether it survives.
 | 7 | Squares of a Sorted Array | Sort `O(n log n)` vs two pointers `O(n)`. | [LeetCode 977](https://leetcode.com/problems/squares-of-a-sorted-array/) |
 | 8 | Number of Recent Calls | A queue where `shift()` would be `O(n^2)`. | [LeetCode 933](https://leetcode.com/problems/number-of-recent-calls/) |
 
+## Empirical analysis
+| Problem | Hint | Link |
+|---------|------|------|
+| Time-complexity practice set | Read the constraints, name the class BEFORE coding. | [GfG](https://www.geeksforgeeks.org/practice-questions-time-complexity-analysis/) |
+| Sort an Array | Implement two sorts, count the comparisons, compare the growth. | [LeetCode 912](https://leetcode.com/problems/sort-an-array/) |
+| Kth Largest Element in an Array | Measure heap vs quickselect vs full sort at several sizes. | [LeetCode 215](https://leetcode.com/problems/kth-largest-element-in-an-array/) |
+
 ## Self-check before moving on
 
 - [ ] I never call `includes()` inside a loop over the other array.
@@ -21,3 +28,6 @@ constraints and decide whether it survives.
 - [ ] I use a head index or linked list for queues.
 - [ ] I count every intermediate array in a `map().filter()` chain as `O(n)` space.
 - [ ] I know Node overflows the stack at roughly 10k recursive frames.
+- [ ] I assert on operation COUNTS and only report wall-clock times.
+- [ ] I take the MINIMUM of several runs, never the mean.
+- [ ] I can name a complexity class from its growth ratio alone.

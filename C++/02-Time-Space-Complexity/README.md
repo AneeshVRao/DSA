@@ -126,6 +126,59 @@ Memory limits are usually 256 MB, which is about 64 million `int`s. A
 
 ---
 
+## Empirical analysis - checking the theory against a clock
+
+Big-O is a prediction. Measuring is how you find out whether it was the right
+one - and, just as often, that the constant factor mattered more than the
+exponent.
+
+### Count operations, not milliseconds
+
+Wall-clock time depends on the machine, the compiler, the JIT's warm-up state
+and whatever else is running. An **operation count** does not. So the counted
+version of each algorithm is what the assertions check; the timings are printed
+alongside as context.
+
+That distinction is worth internalising: this chapter *asserts*
+`insertion sort on reversed input = n(n-1)/2 comparisons, exactly` and merely
+*reports* "it took 200ms".
+
+### Reading the class off the data
+
+Double `n` and watch the ratio:
+
+| Ratio as `n` doubles | Class |
+|---|---|
+| ~1 | `O(1)` or `O(log n)` |
+| ~2 | `O(n)` |
+| just over 2, creeping up | `O(n log n)` |
+| ~4 | `O(n^2)` |
+| ~8 | `O(n^3)` |
+
+The demo prints exactly this, and asserts it: insertion sort's counts grow
+`x4.01, x4.00, x4.00`, merge sort's `x2.25, x2.22, x2.20`. You can identify a
+complexity class from measurements alone, without seeing the code.
+
+### Timing methodology
+
+Two things that separate a benchmark from a guess:
+
+**Take the MINIMUM, never the mean.** Timing noise is one-sided - a scheduler
+interrupt or a GC pause can only make a run *slower*, never faster. The minimum
+of several runs is the closest estimate of the true cost; averaging just folds
+the noise in.
+
+**Use a monotonic high-resolution clock** - `perf_counter`, `steady_clock`,
+`performance.now()`, `time.Now`. A wall clock can be adjusted mid-measurement,
+and millisecond resolution is far too coarse for anything that finishes quickly.
+
+> **The adaptive best case is worth seeing measured.** Insertion sort is `O(n^2)`
+> on reversed input and `O(n)` on already-sorted input - exactly 1999
+> comparisons for 2000 sorted elements. That is precisely why real hybrid sorts
+> (Timsort, introsort) fall back to it on short or nearly-ordered runs.
+
+---
+
 ## Compile and run
 
 ```bash

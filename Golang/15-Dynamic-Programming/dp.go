@@ -10,6 +10,8 @@ import (
 	"math/bits"
 	"math/rand"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // ============================================================================
@@ -394,6 +396,280 @@ func MinPathSum(grid [][]int) int {
 // ============================================================================
 // demo
 // ============================================================================
+
+// ============================================================================
+// 9. Digit DP - counting numbers, not iterating them
+// ============================================================================
+
+// CountWithDigitSumAtMost counts x in [0, limit] whose digit sum is at most
+// maxDigitSum. O(digits * sum * 2).
+//
+// The tell for digit DP: the ANSWER IS A COUNT OVER A RANGE, and the range is
+// far too large to iterate - limit can be 10^18. So build the numbers one digit
+// at a time and count the branches instead of walking them.
+//
+// THE STATE:
+//
+//	pos    which digit position is being filled, left to right
+//	tight  are we still exactly on the prefix of limit?
+//	total  digit sum accumulated so far
+//
+// THE `tight` FLAG IS THE WHOLE TECHNIQUE. While every digit so far has matched
+// limit exactly, the next digit is capped at limit[pos]. The moment one smaller
+// digit is placed, the prefix is already below limit and every later digit is
+// free to be 0-9 - and that subtree is shared by an enormous number of values,
+// which is what makes memoisation pay.
+//
+// Without tight there is nothing to memoise: the answer would depend on the
+// entire prefix. With it, the prefix collapses to a single bit.
+//
+// Leading zeros need no special handling here because a leading zero adds 0 to
+// the digit sum. Constraints on the DIGITS THEMSELVES do - see
+// CountWithoutDigit.
+func CountWithDigitSumAtMost(limit int, maxDigitSum int) int {
+	if limit < 0 {
+		return 0
+	}
+
+	digits := strconv.Itoa(limit)
+	type state struct {
+		pos   int
+		tight bool
+		total int
+	}
+	memo := map[state]int{}
+
+	var go_ func(pos int, tight bool, total int) int
+	go_ = func(pos int, tight bool, total int) int {
+		if total > maxDigitSum {
+			return 0 // prune: sums only ever grow
+		}
+		if pos == len(digits) {
+			return 1 // a complete, valid number
+		}
+
+		key := state{pos, tight, total}
+		if cached, ok := memo[key]; ok {
+			return cached
+		}
+
+		// Capped by limit's digit only while still on its prefix.
+		highest := 9
+		if tight {
+			highest = int(digits[pos] - '0')
+		}
+
+		count := 0
+		for digit := 0; digit <= highest; digit++ {
+			count += go_(pos+1, tight && digit == highest, total+digit)
+		}
+		memo[key] = count
+		return count
+	}
+
+	return go_(0, true, 0)
+}
+
+// CountInRangeWithDigitSum counts over [low, high]. Prefix subtraction.
+//
+//	f(low, high) = f(0, high) - f(0, low-1)
+//
+// Digit DP naturally counts from 0, so a two-sided range is two one-sided
+// calls. The `low - 1` is the part people get wrong - using low drops a value
+// that should be counted.
+func CountInRangeWithDigitSum(low, high, maxDigitSum int) int {
+	if low > high {
+		return 0
+	}
+	return CountWithDigitSumAtMost(high, maxDigitSum) -
+		CountWithDigitSumAtMost(low-1, maxDigitSum)
+}
+
+// CountWithoutDigit counts x in [0, limit] containing no occurrence of
+// forbidden. O(digits).
+//
+// The same `tight` skeleton - but this constraint needs a THIRD state bit, and
+// the reason is the classic digit-DP trap.
+//
+// LEADING ZEROS ARE NOT DIGITS. Every candidate is built to the full width of
+// limit, so 7 is constructed as "007" when limit has three digits. The
+// digit-sum version above does not care, because those zeros add 0 to the sum.
+// Here they are fatal: with forbidden == 0 the padding alone would reject every
+// short number, and CountWithoutDigit(50, 0) would return 36 rather than 45.
+//
+// So carry `started` - has a significant digit been placed yet? A zero before
+// the number has started is padding and exempt; once started, every digit is
+// real and the filter applies.
+//
+// The base case needs care too: if nothing ever started, the value IS zero,
+// written "0" - so it survives only when 0 is not the forbidden digit.
+func CountWithoutDigit(limit, forbidden int) int {
+	if limit < 0 {
+		return 0
+	}
+
+	digits := strconv.Itoa(limit)
+	type state struct {
+		pos            int
+		tight, started bool
+	}
+	memo := map[state]int{}
+
+	var go_ func(pos int, tight, started bool) int
+	go_ = func(pos int, tight, started bool) int {
+		if pos == len(digits) {
+			if started {
+				return 1
+			}
+			// Nothing was ever placed: the value is 0, written "0".
+			if forbidden == 0 {
+				return 0
+			}
+			return 1
+		}
+
+		key := state{pos, tight, started}
+		if cached, ok := memo[key]; ok {
+			return cached
+		}
+
+		highest := 9
+		if tight {
+			highest = int(digits[pos] - '0')
+		}
+
+		count := 0
+		for digit := 0; digit <= highest; digit++ {
+			nowStarted := started || digit != 0
+			if nowStarted && digit == forbidden {
+				continue // a REAL digit, and it is banned
+			}
+			count += go_(pos+1, tight && digit == highest, nowStarted)
+		}
+		memo[key] = count
+		return count
+	}
+
+	return go_(0, true, false)
+}
+
+// ============================================================================
+// 10. Game theory DP - minimax, memoisation and alpha-beta
+// ============================================================================
+
+// StoneGameMargin returns the first player's final margin under optimal play.
+// O(n^2).
+//
+// Two players alternately take a stone from EITHER END of the row. Both play
+// perfectly. What is (my total - their total) at the end?
+//
+// THE TRICK THAT COLLAPSES IT. Do not track two scores and whose turn it is.
+// Track a single number - the MARGIN from the perspective of whoever is about
+// to move:
+//
+//	best[i][j] = the best achievable (my points - their points) on [i, j]
+//
+// Taking values[i] scores values[i] and then hands the opponent a position
+// worth best[i+1][j] *to them*, which counts against me:
+//
+//	best[i][j] = max(values[i] - best[i+1][j],
+//	                 values[j] - best[i][j-1])
+//
+// That single minus sign is the whole of minimax. There is no separate
+// "minimising player" branch, because the opponent's best margin is exactly the
+// negative of mine - the game is zero-sum, and this is the NEGAMAX form.
+//
+// O(n^2) states, O(1) each. The naive tree is O(2^n).
+func StoneGameMargin(values []int) int {
+	n := len(values)
+	if n == 0 {
+		return 0
+	}
+
+	best := make([][]int, n)
+	for i := range best {
+		best[i] = make([]int, n)
+		best[i][i] = values[i] // one stone left: take it
+	}
+
+	for length := 2; length <= n; length++ { // INCREASING LENGTH, as always
+		for i := 0; i+length <= n; i++ {
+			j := i + length - 1
+			best[i][j] = max(values[i]-best[i+1][j], values[j]-best[i][j-1])
+		}
+	}
+	return best[0][n-1]
+}
+
+// MinimaxExplicit returns the same answer by explicit tree search, together
+// with the number of nodes visited.
+//
+// Written as an actual search rather than a table, because that is the form
+// alpha-beta applies to - and the node counter is what makes the pruning
+// measurable instead of merely claimed.
+//
+// ALPHA-BETA. Carry two bounds down the tree:
+//
+//	alpha  the best margin the side to move can already guarantee here
+//	beta   the most the parent will ever allow this node to be worth
+//
+// If alpha >= beta, the parent already has a better option elsewhere and will
+// never choose this branch, so the rest of it need not be examined. The exact
+// value is irrelevant once it is known to be too good to be allowed, which is
+// why the cutoff is safe and the answer unchanged.
+//
+// THE WINDOW HAS TO BE SHIFTED, NOT JUST NEGATED. The textbook negamax line is
+// `-search(child, -beta, -alpha)`, correct only when a node's value is exactly
+// the negation of its child's. Here it is
+//
+//	value = face - child          (face = the stone just taken)
+//
+// so the window must be transformed through that expression too. Solving
+// `alpha < face - child < beta` for the child gives
+//
+//	child window = (face - beta, face - alpha)
+//
+// and face differs per branch, so each child gets its own window. Passing the
+// plain (-beta, -alpha) prunes branches that were still live and silently
+// returns a wrong margin on some inputs.
+func MinimaxExplicit(values []int, useAlphaBeta bool) (int, int) {
+	nodes := 0
+	const infMargin = 1000000000
+
+	var search func(i, j, alpha, beta int) int
+	search = func(i, j, alpha, beta int) int {
+		nodes++
+		if i > j {
+			return 0
+		}
+
+		bestMargin := -infMargin
+		for _, takeLeft := range []bool{true, false} {
+			// The stone taken on this branch, and the range left behind.
+			face, lo, hi := values[j], i, j-1
+			if takeLeft {
+				face, lo, hi = values[i], i+1, j
+			}
+
+			// Window shifted through `face - child` - see above.
+			child := search(lo, hi, face-beta, face-alpha)
+			gain := face - child
+
+			bestMargin = max(bestMargin, gain)
+			alpha = max(alpha, bestMargin)
+			if useAlphaBeta && alpha >= beta {
+				break // cutoff: the parent will never come here
+			}
+		}
+		return bestMargin
+	}
+
+	margin := search(0, len(values)-1, -infMargin, infMargin)
+	return margin, nodes
+}
+
+// CanFirstPlayerWin reports whether the first player wins outright.
+func CanFirstPlayerWin(values []int) bool { return StoneGameMargin(values) > 0 }
 
 func assert(cond bool, msg string) {
 	if !cond {
@@ -956,6 +1232,125 @@ func main() {
 		}
 		assert(SubsetSumPartitionMinDifference(nums) == bestDiff, "partition difference")
 	}
+	// --- Digit DP ------------------------------------------------------------
+	assert(CountWithDigitSumAtMost(0, 0) == 1, "just 0 itself")
+	assert(CountWithDigitSumAtMost(9, 5) == 6, "0,1,2,3,4,5")
+	assert(CountWithDigitSumAtMost(20, 2) == 6, "0,1,2,10,11,20")
+	assert(CountWithDigitSumAtMost(-1, 5) == 0, "empty range")
+	assert(CountWithDigitSumAtMost(100, 100) == 101, "every value fits")
+
+	// Against brute force over the whole range.
+	digitSum := func(x int) int {
+		sum := 0
+		for ; x > 0; x /= 10 {
+			sum += x % 10
+		}
+		return sum
+	}
+	for limit := 0; limit < 400; limit++ {
+		for _, cap := range []int{0, 1, 5, 9, 15} {
+			expected := 0
+			for x := 0; x <= limit; x++ {
+				if digitSum(x) <= cap {
+					expected++
+				}
+			}
+			assert(CountWithDigitSumAtMost(limit, cap) == expected,
+				"digit-sum count matches brute force")
+		}
+	}
+
+	assert(CountInRangeWithDigitSum(10, 20, 2) == 3, "10, 11, 20")
+	assert(CountInRangeWithDigitSum(5, 5, 5) == 1, "inclusive at both ends")
+	assert(CountInRangeWithDigitSum(20, 10, 5) == 0, "inverted range")
+
+	assert(CountWithoutDigit(9, 4) == 9, "0-9 minus the 4")
+	assert(CountWithoutDigit(50, 0) == 45, "the leading-zero trap")
+	for limit := 0; limit < 500; limit++ {
+		for _, forbidden := range []int{0, 4, 7} {
+			expected := 0
+			for x := 0; x <= limit; x++ {
+				if !strings.ContainsRune(strconv.Itoa(x), rune('0'+forbidden)) {
+					expected++
+				}
+			}
+			assert(CountWithoutDigit(limit, forbidden) == expected,
+				"forbidden-digit count matches brute force")
+		}
+	}
+
+	// The point of the whole technique: a range no loop could ever walk.
+	assert(CountWithDigitSumAtMost(1000000000000000000, 20) > 0, "10^18, instantly")
+
+	// --- Game theory DP ------------------------------------------------------
+	assert(StoneGameMargin([]int{1, 5, 2}) == -2, "every move loses ground")
+	assert(StoneGameMargin([]int{5, 3, 4, 5}) == 1, "a one-point win")
+	assert(StoneGameMargin([]int{10}) == 10, "take the only stone")
+	assert(StoneGameMargin(nil) == 0, "no stones")
+	assert(StoneGameMargin([]int{2, 2}) == 0, "symmetric: a draw")
+
+	assert(CanFirstPlayerWin([]int{5, 3, 4, 5}), "first player wins")
+	assert(!CanFirstPlayerWin([]int{1, 5, 2}), "first player loses")
+
+	gameRng := rand.New(rand.NewSource(13))
+	strictlyFewer, trials := 0, 0
+	for t := 0; t < 60; t++ {
+		n := gameRng.Intn(9) + 4
+		stones := make([]int, n)
+		for i := range stones {
+			stones[i] = gameRng.Intn(20) + 1
+		}
+
+		table := StoneGameMargin(stones)
+		plain, plainNodes := MinimaxExplicit(stones, false)
+		pruned, prunedNodes := MinimaxExplicit(stones, true)
+
+		assert(plain == table, "search agrees with the DP table")
+		assert(pruned == table, "pruning changes NOTHING about the answer")
+
+		// Pruning can never COST nodes - that part is a guarantee.
+		assert(prunedNodes <= plainNodes, "alpha-beta never visits more")
+		trials++
+		if prunedNodes < plainNodes {
+			strictlyFewer++
+		}
+	}
+	// How much it saves is input-dependent, so the claim is statistical: on a
+	// two-branch game with fixed move ordering there are positions where
+	// nothing can be cut. It should still win almost always.
+	assert(float64(strictlyFewer) >= 0.9*float64(trials), "pruning usually bites")
+
+	// Brute force over every play sequence, for small inputs.
+	var bruteMargin func(remaining []int) int
+	bruteMargin = func(remaining []int) int {
+		if len(remaining) == 0 {
+			return 0
+		}
+		return max(remaining[0]-bruteMargin(remaining[1:]),
+			remaining[len(remaining)-1]-bruteMargin(remaining[:len(remaining)-1]))
+	}
+	for t := 0; t < 40; t++ {
+		stones := make([]int, gameRng.Intn(10))
+		for i := range stones {
+			stones[i] = gameRng.Intn(9) + 1
+		}
+		assert(StoneGameMargin(stones) == bruteMargin(stones),
+			"the table matches exhaustive play")
+	}
+
+	// A deterministic case large enough that pruning definitely bites.
+	ordered := make([]int, 16)
+	for i := range ordered {
+		ordered[i] = i + 1
+	}
+	_, unprunedNodes := MinimaxExplicit(ordered, false)
+	_, alphaBetaNodes := MinimaxExplicit(ordered, true)
+	assert(alphaBetaNodes < unprunedNodes, "pruning bites at n=16")
+	// n levels of choices plus the empty-range leaves: 2^(n+1) - 1 nodes.
+	assert(unprunedNodes == 1<<(len(ordered)+1)-1, "the unpruned tree is full")
+
+	fmt.Printf("  minimax visited %d nodes, alpha-beta %d (%d%% pruned)\n",
+		unprunedNodes, alphaBetaNodes, 100-100*alphaBetaNodes/unprunedNodes)
 
 	fmt.Println("15-Dynamic-Programming (Go): all checks passed")
 	fmt.Println("  Interval DP checked against every parenthesisation and burst order,")

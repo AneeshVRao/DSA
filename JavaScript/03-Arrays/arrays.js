@@ -325,6 +325,81 @@ export function mergeSorted(a, b) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Memory layout: why the same loop has two speeds
+// ============================================================================
+/**
+ * Walk the grid the way it is stored: row by row.
+ *
+ * Memory is a flat line, and a 2-D grid has to be flattened onto it somehow.
+ * ROW-MAJOR order (C, C++, Java, Go, JavaScript) stores row 0, then row 1, and
+ * so on. Column-major (Fortran, MATLAB, R) does the opposite.
+ *
+ * The CPU never fetches one value. It fetches a CACHE LINE - typically 64
+ * bytes - so walking along a row means every fetch delivers the next several
+ * iterations for free. One miss, then several hits.
+ */
+export function sumRowMajor(grid) {
+  let total = 0;
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    for (let c = 0; c < row.length; c++) total += row[c];
+  }
+  return total;
+}
+
+/**
+ * Walk ACROSS the storage order: column by column.
+ *
+ * Identical arithmetic, identical result, two lines swapped - and measurably
+ * slower on the same data.
+ *
+ * Each step jumps a whole row ahead in memory. Once a row exceeds a cache line
+ * (it usually does), every access is a fresh miss, and the bytes fetched are
+ * evicted before their neighbours are ever used. The memory bandwidth spent is
+ * the same; the useful fraction of it is not.
+ *
+ * This is the gap between an algorithm's COMPLEXITY - both loops are
+ * `O(rows * cols)`, identically - and its CONSTANT FACTOR. Big-O deliberately
+ * ignores what the hardware is doing, which is why it is necessary but never
+ * sufficient.
+ *
+ * In JS the effect is muted compared with C: an array of arrays is an array of
+ * POINTERS to separately allocated rows, so even the row-major walk chases a
+ * pointer per row. A `Float64Array`/`Int32Array` with manual index arithmetic
+ * (`flat[r * cols + c]`) is genuinely contiguous, and shows the full gap.
+ */
+export function sumColumnMajor(grid) {
+  let total = 0;
+  const rows = grid.length;
+  const cols = rows ? grid[0].length : 0;
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) total += grid[r][c];
+  }
+  return total;
+}
+
+/**
+ * The classic broken 2-D initialisation. DO NOT use this.
+ *
+ *     new Array(rows).fill(new Array(cols).fill(0))
+ *
+ * The inner array is built ONCE, and `fill` copies that same REFERENCE into
+ * every slot. Every row is the same object, so writing to `grid[0][0]` writes
+ * to every row at once.
+ *
+ * It is silent: the shape is right, the values start right, and it only goes
+ * wrong on the first write. Kept here purely so the demo can prove it.
+ */
+export function aliasedGrid(rows, cols) {
+  return new Array(rows).fill(new Array(cols).fill(0)); // every row is ONE array
+}
+
+/** The correct version: `Array.from` runs its factory once per row. */
+export function independentGrid(rows, cols) {
+  return Array.from({ length: rows }, () => new Array(cols).fill(0));
+}
+
 function demo() {
   const arr = new DynamicArray();
   for (let i = 0; i < 5; i++) arr.push(i);
@@ -413,6 +488,56 @@ function demo() {
   }
 
   assert.equal(new PrefixSum2D([]).rangeSum(0, 0, 0, 0), 0); // no rows at all
+  // --- Memory layout ----------------------------------------------------------
+  {
+    // The aliasing trap, demonstrated rather than described.
+    const broken = aliasedGrid(3, 3);
+    broken[0][0] = 9;
+    assert.ok(broken[1][0] === 9 && broken[2][0] === 9); // all three rows changed
+    assert.ok(broken[0] === broken[1]); // because they are one array
+
+    const fine = independentGrid(3, 3);
+    fine[0][0] = 9;
+    assert.ok(fine[1][0] === 0 && fine[2][0] === 0); // only the one cell moved
+    assert.ok(fine[0] !== fine[1]);
+
+    // Row-major vs column-major: same complexity, same answer, different speed.
+    const side = 2000;
+    const layoutGrid = Array.from({ length: side }, (_, r) =>
+      Int32Array.from({ length: side }, (_, c) => r + c),
+    );
+
+    const timeBestOf = (fn, repeats = 3) => {
+      let best = Infinity;
+      for (let i = 0; i < repeats; i++) {
+        const start = performance.now();
+        fn();
+        best = Math.min(best, performance.now() - start);
+      }
+      return best;
+    };
+
+    const rowMs = timeBestOf(() => sumRowMajor(layoutGrid));
+    const colMs = timeBestOf(() => sumColumnMajor(layoutGrid));
+
+    // The part that is a FACT: both orders compute the same sum.
+    let expected = 0;
+    for (let r = 0; r < side; r++) for (let c = 0; c < side; c++) expected += r + c;
+    assert.equal(sumRowMajor(layoutGrid), expected);
+    assert.equal(sumColumnMajor(layoutGrid), expected);
+
+    // The part that is a MEASUREMENT: row-major is normally faster here. The
+    // assertion is deliberately loose - a busy machine can distort any timing -
+    // but the printed ratio below shows the real effect.
+    assert.ok(rowMs < colMs * 1.5, "row-major should not be slower");
+
+    console.log(`  row-major    ${rowMs.toFixed(1).padStart(7)} ms`);
+    console.log(
+      `  column-major ${colMs.toFixed(1).padStart(7)} ms` +
+        `   <- ${(colMs / rowMs).toFixed(1)}x slower, same O(n^2)`,
+    );
+  }
+
 
   console.log("03-Arrays (JavaScript): all checks passed");
   console.log("  2-D prefix sums checked against brute force on every rectangle");

@@ -546,6 +546,242 @@ def subset_sum_partition_min_difference(nums: list[int]) -> int:
 
 
 # ============================================================================
+# 9. Digit DP - counting numbers, not iterating them
+# ============================================================================
+def count_with_digit_sum_at_most(limit: int, max_digit_sum: int) -> int:
+    """How many x in [0, limit] have a digit sum <= max_digit_sum. O(digits * sum * 2).
+
+    The tell for digit DP: the ANSWER IS A COUNT OVER A RANGE, and the range is
+    far too large to iterate - `limit` can be 10^18. So build the numbers one
+    digit at a time and count the branches instead of walking them.
+
+    THE STATE:
+
+        pos    which digit position we are filling, left to right
+        tight  are we still exactly on the prefix of `limit`?
+        total  digit sum accumulated so far
+
+    THE `tight` FLAG IS THE WHOLE TECHNIQUE. While every digit so far has
+    matched `limit` exactly, the next digit is capped at limit[pos]. The moment
+    one smaller digit is placed, the prefix is already below `limit` and every
+    later digit is free to be 0-9 - and that subtree is shared by an enormous
+    number of values, which is what makes memoisation pay.
+
+    Without tight there is nothing to memoise: the answer would depend on the
+    entire prefix. With it, the prefix collapses to a single bit.
+
+    The digits are a plain string, and leading zeros need no special handling
+    here because a leading zero adds 0 to the digit sum. Problems that count
+    "numbers with no leading zeros" need a third `started` flag.
+    """
+    if limit < 0:
+        return 0
+    digits = str(limit)
+
+    @lru_cache(maxsize=None)
+    def go(pos: int, tight: bool, total: int) -> int:
+        if total > max_digit_sum:
+            return 0                          # prune: sums only ever grow
+        if pos == len(digits):
+            return 1                          # a complete, valid number
+
+        # Capped by limit's digit only while still on its prefix.
+        highest = int(digits[pos]) if tight else 9
+        count = 0
+        for digit in range(highest + 1):
+            count += go(pos + 1, tight and digit == highest, total + digit)
+        return count
+
+    result = go(0, True, 0)
+    go.cache_clear()                          # the cache is limit-specific
+    return result
+
+
+def count_in_range_with_digit_sum(low: int, high: int, max_digit_sum: int) -> int:
+    """Same count over [low, high]. The standard prefix-subtraction trick.
+
+        f(low, high) = f(0, high) - f(0, low - 1)
+
+    Digit DP naturally counts from 0, so a two-sided range is answered by two
+    one-sided calls. The `low - 1` is the part people get wrong - using `low`
+    excludes a value that should be counted.
+    """
+    if low > high:
+        return 0
+    return (count_with_digit_sum_at_most(high, max_digit_sum)
+            - count_with_digit_sum_at_most(low - 1, max_digit_sum))
+
+
+def count_without_digit(limit: int, forbidden: int) -> int:
+    """How many x in [0, limit] contain no occurrence of `forbidden`. O(digits).
+
+    The same `tight` skeleton - but this constraint needs a THIRD state bit,
+    and the reason is the classic digit-DP trap.
+
+    LEADING ZEROS ARE NOT DIGITS. Every candidate is built to the full width of
+    `limit`, so 7 is constructed as "007" when limit has three digits. The
+    digit-sum version above does not care, because those zeros add 0 to the sum.
+    Here they are fatal: with `forbidden = 0` the padding alone would reject
+    every short number, and `count_without_digit(50, 0)` would return 36
+    instead of 45.
+
+    So carry `started` - has a significant digit been placed yet? A zero before
+    the number has started is padding and is exempt; once started, every digit
+    is real and the filter applies.
+
+        started == False  ->  still in the padding, 0 is not a real digit
+        started == True   ->  a genuine digit position, apply the constraint
+
+    The base case needs care too: if nothing ever started, the value IS zero,
+    whose representation is the single character "0" - so it survives only when
+    0 is not the forbidden digit.
+
+    Any digit-DP problem phrased over the DIGITS THEMSELVES (no forbidden digit,
+    no two equal adjacent digits, strictly increasing digits) needs this flag.
+    Problems phrased over an aggregate (sum, remainder) usually do not.
+    """
+    if limit < 0:
+        return 0
+    digits = str(limit)
+
+    @lru_cache(maxsize=None)
+    def go(pos: int, tight: bool, started: bool) -> int:
+        if pos == len(digits):
+            if started:
+                return 1
+            # Nothing was ever placed: the value is 0, written "0".
+            return 0 if forbidden == 0 else 1
+
+        highest = int(digits[pos]) if tight else 9
+        count = 0
+        for digit in range(highest + 1):
+            now_started = started or digit != 0
+            if now_started and digit == forbidden:
+                continue                      # a REAL digit, and it is banned
+            count += go(pos + 1, tight and digit == highest, now_started)
+        return count
+
+    result = go(0, True, False)
+    go.cache_clear()
+    return result
+
+
+# ============================================================================
+# 10. Game theory DP - minimax, memoisation and alpha-beta
+# ============================================================================
+def stone_game_margin(values: list[int]) -> int:
+    """First player's final margin when both play optimally. O(n^2).
+
+    Two players alternately take a stone from EITHER END of the row. Both play
+    perfectly. What is (my total - their total) at the end?
+
+    THE TRICK THAT COLLAPSES IT. Do not track two scores and whose turn it is.
+    Track a single number - the MARGIN from the perspective of whoever is about
+    to move:
+
+        best[i][j] = the best achievable (my points - their points) on [i, j]
+
+    Taking values[i] scores values[i] and then hands the opponent a position
+    worth best[i+1][j] *to them*, which counts against me:
+
+        best[i][j] = max(values[i] - best[i+1][j],
+                         values[j] - best[i][j-1])
+
+    That single minus sign is the whole of minimax. There is no separate
+    "minimising player" branch, because the opponent's best margin is exactly
+    the negative of mine - the game is zero-sum and this is the NEGAMAX form.
+
+    O(n^2) states, O(1) each. The naive tree is O(2^n).
+    """
+    n = len(values)
+    if n == 0:
+        return 0
+
+    # best[i][j] over the inclusive range [i, j], filled by increasing length.
+    best = [[0] * n for _ in range(n)]
+    for i in range(n):
+        best[i][i] = values[i]                # one stone left: take it
+
+    for length in range(2, n + 1):            # INCREASING LENGTH, as always
+        for i in range(n - length + 1):
+            j = i + length - 1
+            best[i][j] = max(values[i] - best[i + 1][j],
+                             values[j] - best[i][j - 1])
+    return best[0][n - 1]
+
+
+def minimax_explicit(values: list[int], use_alpha_beta: bool) -> tuple[int, int]:
+    """The same answer by explicit tree search. Returns (margin, nodes visited).
+
+    Written out as an actual search rather than a table, because that is the
+    form alpha-beta applies to - and the node counter is what makes the pruning
+    measurable instead of merely claimed.
+
+    ALPHA-BETA. Carry two bounds down the tree:
+
+        alpha  the best margin the side to move can already guarantee here
+        beta   the most the parent will ever allow this node to be worth
+
+    If alpha >= beta at a node, the parent already has a better option
+    elsewhere and will never choose this branch - so the rest of it need not be
+    examined. The exact value is irrelevant once it is known to be too good to
+    be allowed, which is why the cutoff is safe and the answer is unchanged.
+
+    Pruning changes nothing about correctness and everything about cost: with
+    good move ordering it takes the branching factor from b to roughly sqrt(b),
+    the difference between searching 6 plies and 12.
+
+    THE WINDOW HAS TO BE SHIFTED, NOT JUST NEGATED. The textbook negamax line
+    is `-search(child, -beta, -alpha)`, which is correct only when a node's
+    value is exactly the negation of its child's. Here it is
+
+        value = face - child          (face = the stone just taken)
+
+    so the window has to be transformed through that expression too. Solving
+    `alpha < face - child < beta` for the child gives
+
+        child window = (face - beta, face - alpha)
+
+    and `face` differs per branch, so each child gets its own window. Passing
+    the plain `(-beta, -alpha)` prunes branches that were still live and
+    silently returns a wrong margin on some inputs - it only shows up when the
+    pruned search is compared against the unpruned one, which is exactly what
+    the demo does.
+    """
+    nodes = 0
+
+    def search(i: int, j: int, alpha: int, beta: int) -> int:
+        nonlocal nodes
+        nodes += 1
+        if i > j:
+            return 0
+
+        best_margin = -(10 ** 9)
+        for take_left in (True, False):
+            # The stone taken on this branch, and the range left behind.
+            face = values[i] if take_left else values[j]
+            lo, hi = (i + 1, j) if take_left else (i, j - 1)
+
+            # Window shifted through `face - child` - see the docstring.
+            child = search(lo, hi, face - beta, face - alpha)
+            gain = face - child
+
+            best_margin = max(best_margin, gain)
+            alpha = max(alpha, best_margin)
+            if use_alpha_beta and alpha >= beta:
+                break                          # cutoff: the parent won't come here
+        return best_margin
+
+    margin = search(0, len(values) - 1, -(10 ** 9), 10 ** 9)
+    return margin, nodes
+
+
+def can_first_player_win(values: list[int]) -> bool:
+    """Does the first player win outright? A margin above zero says yes."""
+    return stone_game_margin(values) > 0
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -721,6 +957,104 @@ def demo() -> None:
             part = sum(v for i, v in enumerate(nums) if mask >> i & 1)
             best_diff = min(best_diff, abs(total - 2 * part))
         assert subset_sum_partition_min_difference(nums) == best_diff
+
+    # --- Digit DP ------------------------------------------------------------
+    assert count_with_digit_sum_at_most(0, 0) == 1          # just 0 itself
+    assert count_with_digit_sum_at_most(9, 5) == 6          # 0,1,2,3,4,5
+    assert count_with_digit_sum_at_most(20, 2) == 6         # 0,1,2,10,11,20
+    assert count_with_digit_sum_at_most(-1, 5) == 0         # empty range
+    assert count_with_digit_sum_at_most(100, 100) == 101    # every value fits
+
+    # Against brute force over the whole range.
+    for limit in range(0, 400):
+        for cap in (0, 1, 5, 9, 15):
+            expected = sum(1 for x in range(limit + 1)
+                           if sum(int(c) for c in str(x)) <= cap)
+            assert count_with_digit_sum_at_most(limit, cap) == expected
+
+    assert count_in_range_with_digit_sum(10, 20, 2) == 3    # 10, 11, 20
+    assert count_in_range_with_digit_sum(5, 5, 5) == 1      # inclusive both ends
+    assert count_in_range_with_digit_sum(20, 10, 5) == 0    # inverted
+
+    for _ in range(200):
+        low = random.randint(0, 300)
+        high = random.randint(low, 500)
+        cap = random.randint(0, 20)
+        expected = sum(1 for x in range(low, high + 1)
+                       if sum(int(c) for c in str(x)) <= cap)
+        assert count_in_range_with_digit_sum(low, high, cap) == expected
+
+    assert count_without_digit(9, 4) == 9                   # 0-9 minus the 4
+    assert count_without_digit(50, 0) == 45
+    for limit in range(0, 500):
+        for forbidden in (0, 4, 7):
+            expected = sum(1 for x in range(limit + 1)
+                           if str(forbidden) not in str(x))
+            assert count_without_digit(limit, forbidden) == expected
+
+    # The point of the whole technique: a range no loop could ever walk.
+    huge = count_with_digit_sum_at_most(10 ** 18, 20)
+    assert huge > 0                                          # returns instantly
+
+    # --- Game theory DP ------------------------------------------------------
+    assert stone_game_margin([1, 5, 2]) == -2      # every move loses ground
+    assert stone_game_margin([5, 3, 4, 5]) == 1
+    assert stone_game_margin([10]) == 10           # take the only stone
+    assert stone_game_margin([]) == 0
+    assert stone_game_margin([2, 2]) == 0          # symmetric: a draw
+
+    assert can_first_player_win([5, 3, 4, 5])
+    assert not can_first_player_win([1, 5, 2])
+
+    # The table, the plain search and the pruned search must all agree.
+    strictly_fewer = 0
+    trials = 0
+    for _ in range(60):
+        n = random.randint(4, 12)
+        stones = [random.randint(1, 20) for _ in range(n)]
+
+        table = stone_game_margin(stones)
+        plain, plain_nodes = minimax_explicit(stones, use_alpha_beta=False)
+        pruned, pruned_nodes = minimax_explicit(stones, use_alpha_beta=True)
+
+        assert plain == table                      # search agrees with the DP
+        assert pruned == table                     # pruning changes NOTHING
+
+        # Pruning can never COST nodes - that part is a guarantee.
+        assert pruned_nodes <= plain_nodes
+        trials += 1
+        strictly_fewer += pruned_nodes < plain_nodes
+
+    # How much it saves is input-dependent, so the claim is statistical rather
+    # than absolute: on a two-branch game with fixed move ordering there are
+    # positions where nothing can be cut. It should still win almost always.
+    assert strictly_fewer >= 0.9 * trials
+
+    # Brute force over every play sequence, for small inputs.
+    def brute_margin(remaining: tuple[int, ...]) -> int:
+        if not remaining:
+            return 0
+        return max(remaining[0] - brute_margin(remaining[1:]),
+                   remaining[-1] - brute_margin(remaining[:-1]))
+
+    for _ in range(40):
+        stones = [random.randint(1, 9) for _ in range(random.randint(0, 9))]
+        assert stone_game_margin(stones) == brute_margin(tuple(stones))
+
+    # A deterministic case large enough that pruning definitely bites.
+    ordered = list(range(1, 17))
+    _, unpruned_nodes = minimax_explicit(ordered, use_alpha_beta=False)
+    _, alphabeta_nodes = minimax_explicit(ordered, use_alpha_beta=True)
+    assert alphabeta_nodes < unpruned_nodes
+    # The unpruned search really is the full binary tree: n levels of choices
+    # plus the empty-range leaves, so 2^(n+1) - 1 nodes.
+    assert unpruned_nodes == 2 ** (len(ordered) + 1) - 1
+
+    print(f"  minimax visited {unpruned_nodes} nodes, "
+          f"alpha-beta {alphabeta_nodes} "
+          f"({100 - 100 * alphabeta_nodes // unpruned_nodes}% pruned)")
+    print("  and the O(n^2) table answers the same question in "
+          f"{len(ordered) ** 2} cells")
 
     print("15-Dynamic-Programming (Python): all checks passed")
     print("  Interval DP checked against every parenthesisation and burst order,")

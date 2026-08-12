@@ -6,15 +6,17 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <climits>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <queue>
-#include <functional>
-#include <map>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -489,6 +491,222 @@ map<int, pair<int, int>> eulerInOut(TreeNode* root) {
     return times;
 }
 
+// ============================================================================
+// Expression trees - an AST for arithmetic
+// ============================================================================
+
+const map<string, int> PRECEDENCE{{"+", 1}, {"-", 1}, {"*", 2}, {"/", 2}};
+
+bool isOperator(const string& token) { return PRECEDENCE.count(token) > 0; }
+
+// A node in an expression tree: an operator with two children, or a leaf.
+//
+// An expression tree is the smallest interesting abstract syntax tree, and it
+// makes the three traversals mean something concrete:
+//
+//     Tree for (3 + 4) * 2:      infix   (3 + 4) * 2    <- inorder
+//                                postfix  3 4 + 2 *     <- postorder
+//                                prefix   * + 3 4 2     <- preorder
+//
+// The tree carries precedence and grouping in its SHAPE, so postfix and prefix
+// need no brackets at all - the structure is unambiguous without them. Only
+// infix needs parentheses, because it throws that information away.
+//
+// This is what a compiler front-end builds, and evaluating it is a post-order
+// fold: children first, then combine.
+struct ExprNode {
+    string value;
+    ExprNode* left = nullptr;
+    ExprNode* right = nullptr;
+
+    explicit ExprNode(string v) : value(std::move(v)) {}
+    bool isOperator() const { return PRECEDENCE.count(value) > 0; }
+};
+
+void deleteExprTree(ExprNode* node) {
+    if (!node) return;
+    deleteExprTree(node->left);
+    deleteExprTree(node->right);
+    delete node;
+}
+
+// Split into numbers, operators and brackets. Multi-digit numbers survive.
+vector<string> tokenizeExpression(const string& expression) {
+    vector<string> tokens;
+    size_t i = 0;
+    while (i < expression.size()) {
+        char c = expression[i];
+        if (isspace(static_cast<unsigned char>(c))) { i++; continue; }
+        if (isdigit(static_cast<unsigned char>(c))) {
+            size_t start = i;
+            while (i < expression.size() &&
+                   (isdigit(static_cast<unsigned char>(expression[i])) ||
+                    expression[i] == '.')) {
+                i++;
+            }
+            tokens.push_back(expression.substr(start, i - start));
+        } else {
+            tokens.push_back(string(1, c));
+            i++;
+        }
+    }
+    return tokens;
+}
+
+// Shunting-yard: infix to postfix in one pass. O(n).
+//
+// Numbers go straight to the output. Operators wait on a stack until something
+// of LOWER precedence arrives, at which point they are popped - which is
+// exactly what makes `*` bind tighter than `+` with no lookahead or recursion.
+//
+// Left associativity is the `>=` in the pop condition: for `8 - 3 - 2` the
+// first `-` is popped when the second arrives, giving `(8-3)-2 = 3` rather than
+// `8-(3-2) = 7`. Changing it to `>` would silently make subtraction
+// right-associative - a real bug, and an easy one to miss.
+//
+// Throws invalid_argument on malformed input. The bare algorithm does not
+// validate at all - see the comment in the body.
+vector<string> infixToPostfix(const vector<string>& tokens) {
+    vector<string> output;
+    vector<string> operators;
+
+    // Shunting-yard on its own does NOT validate. Fed "+ 1 2" it happily emits
+    // "1 2 +" and reports success, silently reinterpreting prefix input as
+    // infix. Tracking what is expected next is what turns a garbled expression
+    // into an error instead of a plausible wrong answer.
+    bool expectOperand = true;
+
+    for (const string& token : tokens) {
+        if (isOperator(token)) {
+            if (expectOperand) throw invalid_argument("operator where an operand was expected");
+            while (!operators.empty() && operators.back() != "(" &&
+                   PRECEDENCE.at(operators.back()) >= PRECEDENCE.at(token)) {
+                output.push_back(operators.back());   // >= : LEFT associative
+                operators.pop_back();
+            }
+            operators.push_back(token);
+            expectOperand = true;
+
+        } else if (token == "(") {
+            if (!expectOperand) throw invalid_argument("'(' directly after an operand");
+            operators.push_back(token);
+
+        } else if (token == ")") {
+            if (expectOperand) throw invalid_argument("')' where an operand was expected");
+            while (!operators.empty() && operators.back() != "(") {
+                output.push_back(operators.back());
+                operators.pop_back();
+            }
+            if (operators.empty()) throw invalid_argument("unbalanced parentheses");
+            operators.pop_back();                     // discard the "("
+            // A closed group behaves as a completed operand.
+
+        } else {
+            if (!expectOperand) throw invalid_argument("two operands in a row");
+            output.push_back(token);                  // a number
+            expectOperand = false;
+        }
+    }
+
+    if (expectOperand) throw invalid_argument("expression ends with an operator");
+
+    while (!operators.empty()) {
+        if (operators.back() == "(") throw invalid_argument("unbalanced parentheses");
+        output.push_back(operators.back());
+        operators.pop_back();
+    }
+    return output;
+}
+
+// Build the tree from postfix in one stack pass. O(n).
+//
+// Postfix is the natural input: by the time an operator appears, both of its
+// operands are already complete subtrees sitting on the stack.
+//
+// The RIGHT operand pops FIRST - it was pushed last. Getting that backwards
+// still builds a valid-looking tree and still evaluates correctly for `+` and
+// `*`; it silently reverses `-` and `/`. A test using only commutative
+// operators would never catch it.
+ExprNode* buildFromPostfix(const vector<string>& tokens) {
+    vector<ExprNode*> stack;
+
+    auto cleanup = [&stack]() {
+        for (ExprNode* node : stack) deleteExprTree(node);
+        stack.clear();
+    };
+
+    for (const string& token : tokens) {
+        if (isOperator(token)) {
+            if (stack.size() < 2) {
+                cleanup();
+                throw invalid_argument("operator with too few operands");
+            }
+            ExprNode* right = stack.back(); stack.pop_back();   // RIGHT first
+            ExprNode* left = stack.back(); stack.pop_back();
+            ExprNode* node = new ExprNode(token);
+            node->left = left;
+            node->right = right;
+            stack.push_back(node);
+        } else {
+            stack.push_back(new ExprNode(token));
+        }
+    }
+
+    if (stack.size() != 1) {
+        cleanup();
+        throw invalid_argument("malformed expression");
+    }
+    return stack[0];
+}
+
+// Infix string to expression tree: tokenize, shunting-yard, then build.
+ExprNode* buildExpressionTree(const string& expression) {
+    return buildFromPostfix(infixToPostfix(tokenizeExpression(expression)));
+}
+
+// Evaluate bottom-up. O(n) - a post-order fold.
+double evaluateExpression(const ExprNode* node) {
+    if (!node->isOperator()) return stod(node->value);
+
+    double left = evaluateExpression(node->left);
+    double right = evaluateExpression(node->right);
+
+    if (node->value == "+") return left + right;
+    if (node->value == "-") return left - right;
+    if (node->value == "*") return left * right;
+    if (right == 0) throw invalid_argument("division by zero in expression");
+    return left / right;
+}
+
+// PREorder: operator, left, right. No brackets needed - unambiguous.
+vector<string> toPrefix(const ExprNode* node) {
+    if (!node->isOperator()) return {node->value};
+    vector<string> out{node->value};
+    for (const string& t : toPrefix(node->left)) out.push_back(t);
+    for (const string& t : toPrefix(node->right)) out.push_back(t);
+    return out;
+}
+
+// POSTorder: left, right, operator. What a stack machine executes.
+vector<string> toPostfix(const ExprNode* node) {
+    if (!node->isOperator()) return {node->value};
+    vector<string> out;
+    for (const string& t : toPostfix(node->left)) out.push_back(t);
+    for (const string& t : toPostfix(node->right)) out.push_back(t);
+    out.push_back(node->value);
+    return out;
+}
+
+// INorder, fully parenthesised.
+//
+// Every operator gets brackets. Emitting infix without them would lose the
+// grouping the tree encodes - `* + 3 4 2` is unambiguous, `3 + 4 * 2` is not.
+string toInfix(const ExprNode* node) {
+    if (!node->isOperator()) return node->value;
+    return "(" + toInfix(node->left) + " " + node->value + " " +
+           toInfix(node->right) + ")";
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -656,6 +874,108 @@ int main() {
         check(root);
         deleteTree(root);
     }
+    // --- Expression trees -----------------------------------------------------
+    {
+        ExprNode* tree = buildExpressionTree("3 + 4 * 2");
+        assert(evaluateExpression(tree) == 11.0);          // * binds tighter
+        assert((toPostfix(tree) == vector<string>{"3", "4", "2", "*", "+"}));
+        assert((toPrefix(tree) == vector<string>{"+", "3", "*", "4", "2"}));
+        assert(toInfix(tree) == "(3 + (4 * 2))");
+        deleteExprTree(tree);
+
+        ExprNode* bracketed = buildExpressionTree("(3 + 4) * 2");
+        assert(evaluateExpression(bracketed) == 14.0);     // brackets override
+        assert((toPostfix(bracketed) == vector<string>{"3", "4", "+", "2", "*"}));
+        assert((toPrefix(bracketed) == vector<string>{"*", "+", "3", "4", "2"}));
+        deleteExprTree(bracketed);
+
+        // Left associativity and operand order. Both are silent when wrong:
+        // right for + and *, WRONG for - and /.
+        for (auto [text, expected] : vector<pair<string, double>>{
+                 {"8 - 3 - 2", 3.0},        // not 7
+                 {"16 / 4 / 2", 2.0},       // not 8
+                 {"8 - 3", 5.0},            // not -5
+                 {"42", 42.0},              // a lone leaf
+                 {"2 * (3 + 4) - 5", 9.0},
+             }) {
+            ExprNode* node = buildExpressionTree(text);
+            assert(evaluateExpression(node) == expected);
+            deleteExprTree(node);
+        }
+
+        // Malformed input is rejected, not silently mis-parsed.
+        // const char*, not const string&: a string reference would bind to a
+        // temporary built from each literal (-Wrange-loop-construct).
+        for (const char* bad : {"(1 + 2", "1 + 2)", "1 +", "+ 1 2", "1 2"}) {
+            bool threw = false;
+            try {
+                deleteExprTree(buildExpressionTree(bad));
+            } catch (const invalid_argument&) {
+                threw = true;
+            }
+            assert(threw);
+        }
+
+        bool dividedByZero = false;
+        try {
+            ExprNode* node = buildExpressionTree("1 / 0");
+            evaluateExpression(node);
+            deleteExprTree(node);
+        } catch (const invalid_argument&) {
+            dividedByZero = true;
+        }
+        assert(dividedByZero);
+
+        // Against an INDEPENDENT reference on random expressions: collapse
+        // every `*` first, then add and subtract what is left. That directly
+        // encodes "* binds tighter than +", so it tests precedence against a
+        // different implementation rather than against itself.
+        mt19937 exprRng(11);
+        for (int trial = 0; trial < 200; trial++) {
+            vector<string> terms{to_string(exprRng() % 9 + 1)};
+            int extra = int(exprRng() % 5) + 1;
+            for (int k = 0; k < extra; k++) {
+                terms.push_back(string(1, "+-*"[exprRng() % 3]));
+                terms.push_back(to_string(exprRng() % 9 + 1));
+            }
+
+            vector<string> collapsed{terms[0]};
+            for (size_t k = 1; k < terms.size(); k += 2) {
+                if (terms[k] == "*") {
+                    collapsed.back() = to_string(stoll(collapsed.back()) *
+                                                 stoll(terms[k + 1]));
+                } else {
+                    collapsed.push_back(terms[k]);
+                    collapsed.push_back(terms[k + 1]);
+                }
+            }
+            double reference = stod(collapsed[0]);
+            for (size_t k = 1; k < collapsed.size(); k += 2) {
+                double value = stod(collapsed[k + 1]);
+                reference = collapsed[k] == "+" ? reference + value : reference - value;
+            }
+
+            string text;
+            for (const string& t : terms) text += t + " ";
+
+            ExprNode* built = buildExpressionTree(text);
+            assert(evaluateExpression(built) == reference);
+
+            // postfix -> tree -> postfix must be a fixed point
+            ExprNode* again = buildFromPostfix(toPostfix(built));
+            assert(evaluateExpression(again) == evaluateExpression(built));
+            assert(toPostfix(again) == toPostfix(built));
+
+            // and the fully-bracketed infix must re-parse to the same value
+            ExprNode* reparsed = buildExpressionTree(toInfix(built));
+            assert(evaluateExpression(reparsed) == evaluateExpression(built));
+
+            deleteExprTree(built);
+            deleteExprTree(again);
+            deleteExprTree(reparsed);
+        }
+    }
+
 
     cout << "11-Trees (C++): all checks passed\n";
     return 0;

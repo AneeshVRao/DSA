@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import random
+import time
 
 
 # ============================================================================
@@ -331,6 +332,73 @@ def merge_sorted(a: list[int], b: list[int]) -> list[int]:
 
 
 # ============================================================================
+# Memory layout: why the same loop has two speeds
+# ============================================================================
+def sum_row_major(grid: list[list[int]]) -> int:
+    """Walk the grid the way it is stored: row by row.
+
+    Memory is a flat line, and a 2-D grid has to be flattened onto it somehow.
+    ROW-MAJOR order (C, C++, Python, Java, Go) stores row 0, then row 1, and so
+    on. Column-major (Fortran, MATLAB, R, and numpy if you ask for it) does the
+    opposite.
+
+    The CPU never fetches one value. It fetches a CACHE LINE - typically 64
+    bytes, so 8 or 16 adjacent elements. Walking along a row means every fetch
+    delivers the next several iterations for free. One miss, then several hits.
+    """
+    total = 0
+    for row in grid:
+        for value in row:
+            total += value
+    return total
+
+
+def sum_column_major(grid: list[list[int]]) -> int:
+    """Walk ACROSS the storage order: column by column.
+
+    Identical arithmetic, identical result, one line of difference - and it can
+    be several times slower on the same data.
+
+    Each step jumps a whole row ahead in memory. If a row is larger than a cache
+    line (it usually is), every single access is a fresh miss, and the line
+    fetched is thrown away before its other 7-15 values are ever used. The
+    memory bandwidth spent is the same; the useful fraction of it is not.
+
+    This is the difference between an algorithm's complexity - both loops are
+    O(rows * cols), identically - and its CONSTANT FACTOR. Big-O deliberately
+    ignores what the hardware is doing, which is why it is necessary but never
+    sufficient.
+    """
+    total = 0
+    rows = len(grid)
+    cols = len(grid[0]) if rows else 0
+    for c in range(cols):
+        for r in range(rows):
+            total += grid[r][c]
+    return total
+
+
+def aliased_grid(rows: int, cols: int) -> list[list[int]]:
+    """The classic broken 2-D initialisation. DO NOT use this.
+
+        [[0] * cols] * rows
+
+    The inner list is built ONCE, and the outer multiply copies the REFERENCE
+    to it `rows` times. Every row is the same object, so writing to grid[0][0]
+    writes to every row at once.
+
+    It is silent: the shape is right, the values start right, and it only goes
+    wrong on the first write. Kept here purely so the demo can prove it.
+    """
+    return [[0] * cols] * rows                    # every row is the SAME list
+
+
+def independent_grid(rows: int, cols: int) -> list[list[int]]:
+    """The correct version: a comprehension builds a fresh row each time."""
+    return [[0] * cols for _ in range(rows)]      # a NEW list per row
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -403,6 +471,48 @@ def demo() -> None:
                         assert sums.range_sum(top, left, bottom, right) == expected
 
     assert PrefixSum2D([]).range_sum(0, 0, 0, 0) == 0     # no rows at all
+
+    # --- Memory layout -------------------------------------------------------
+    # The aliasing trap, demonstrated rather than described.
+    broken = aliased_grid(3, 3)
+    broken[0][0] = 9
+    assert broken[1][0] == 9 and broken[2][0] == 9   # all three rows changed
+    assert broken[0] is broken[1]                    # because they are one list
+
+    fine = independent_grid(3, 3)
+    fine[0][0] = 9
+    assert fine[1][0] == 0 and fine[2][0] == 0       # only the one cell moved
+    assert fine[0] is not fine[1]
+
+    # Row-major vs column-major: same complexity, same answer, different speed.
+    size = 1200
+    layout_grid = [[r + c for c in range(size)] for r in range(size)]
+
+    def time_best_of(fn, repeats: int = 3) -> float:
+        """Minimum, not mean: timing noise only ever makes a run SLOWER."""
+        best = float("inf")
+        for _ in range(repeats):
+            start = time.perf_counter()
+            fn()
+            best = min(best, time.perf_counter() - start)
+        return best
+
+    row_time = time_best_of(lambda: sum_row_major(layout_grid))
+    column_time = time_best_of(lambda: sum_column_major(layout_grid))
+
+    # The part that is a FACT: both orders compute the same sum.
+    expected_sum = sum(r + c for r in range(size) for c in range(size))
+    assert sum_row_major(layout_grid) == expected_sum
+    assert sum_column_major(layout_grid) == expected_sum
+
+    # The part that is a MEASUREMENT: row-major is normally 1.5-3x faster here.
+    # The assertion is deliberately loose - a busy machine can distort any
+    # timing - but the printed ratio below shows the real effect.
+    assert row_time < column_time * 1.5, "row-major should not be slower"
+
+    print(f"  row-major    {row_time * 1000:7.1f} ms")
+    print(f"  column-major {column_time * 1000:7.1f} ms"
+          f"   <- {column_time / row_time:.1f}x slower, same O(n^2)")
 
     print("03-Arrays (Python): all checks passed")
     print("  2-D prefix sums checked against brute force on every rectangle")

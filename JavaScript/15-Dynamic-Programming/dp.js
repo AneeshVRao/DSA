@@ -581,6 +581,237 @@ export function subsetSumPartitionMinDifference(nums) {
   return best;
 }
 
+// ============================================================================
+// 9. Digit DP - counting numbers, not iterating them
+// ============================================================================
+/**
+ * How many x in `[0, limit]` have a digit sum <= `maxDigitSum`.
+ * O(digits * sum * 2).
+ *
+ * The tell for digit DP: the ANSWER IS A COUNT OVER A RANGE, and the range is
+ * far too large to iterate - `limit` can be 10^15. So build the numbers one
+ * digit at a time and count the branches instead of walking them.
+ *
+ * **The state:**
+ *
+ *     pos    which digit position is being filled, left to right
+ *     tight  are we still exactly on the prefix of `limit`?
+ *     total  digit sum accumulated so far
+ *
+ * **The `tight` flag is the whole technique.** While every digit so far has
+ * matched `limit` exactly, the next digit is capped at `limit[pos]`. The moment
+ * one smaller digit is placed, the prefix is already below `limit` and every
+ * later digit is free to be 0-9 - and that subtree is shared by an enormous
+ * number of values, which is what makes memoisation pay.
+ *
+ * Without `tight` there is nothing to memoise: the answer would depend on the
+ * entire prefix. With it, the prefix collapses to a single bit.
+ *
+ * Leading zeros need no special handling here because a leading zero adds 0 to
+ * the digit sum. Constraints on the DIGITS THEMSELVES do - see
+ * `countWithoutDigit`.
+ */
+export function countWithDigitSumAtMost(limit, maxDigitSum) {
+  if (limit < 0) return 0;
+
+  const digits = String(limit);
+  const memo = new Map();
+
+  const go = (pos, tight, total) => {
+    if (total > maxDigitSum) return 0; // prune: sums only ever grow
+    if (pos === digits.length) return 1; // a complete, valid number
+
+    const key = `${pos},${tight ? 1 : 0},${total}`;
+    if (memo.has(key)) return memo.get(key);
+
+    // Capped by limit's digit only while still on its prefix.
+    const highest = tight ? Number(digits[pos]) : 9;
+    let count = 0;
+    for (let digit = 0; digit <= highest; digit++) {
+      count += go(pos + 1, tight && digit === highest, total + digit);
+    }
+    memo.set(key, count);
+    return count;
+  };
+
+  return go(0, true, 0);
+}
+
+/**
+ * The same count over `[low, high]`. The standard prefix-subtraction trick.
+ *
+ *     f(low, high) = f(0, high) - f(0, low - 1)
+ *
+ * Digit DP naturally counts from 0, so a two-sided range is two one-sided
+ * calls. The `low - 1` is the part people get wrong - using `low` drops a value
+ * that should be counted.
+ */
+export function countInRangeWithDigitSum(low, high, maxDigitSum) {
+  if (low > high) return 0;
+  return countWithDigitSumAtMost(high, maxDigitSum) - countWithDigitSumAtMost(low - 1, maxDigitSum);
+}
+
+/**
+ * How many x in `[0, limit]` contain no occurrence of `forbidden`. O(digits).
+ *
+ * The same `tight` skeleton - but this constraint needs a THIRD state bit, and
+ * the reason is the classic digit-DP trap.
+ *
+ * **Leading zeros are not digits.** Every candidate is built to the full width
+ * of `limit`, so 7 is constructed as "007" when limit has three digits. The
+ * digit-sum version above does not care, because those zeros add 0 to the sum.
+ * Here they are fatal: with `forbidden === 0` the padding alone would reject
+ * every short number, and `countWithoutDigit(50, 0)` would return 36 rather
+ * than 45.
+ *
+ * So carry `started` - has a significant digit been placed yet? A zero before
+ * the number has started is padding and exempt; once started, every digit is
+ * real and the filter applies.
+ *
+ * The base case needs care too: if nothing ever started, the value IS zero,
+ * written "0" - so it survives only when 0 is not the forbidden digit.
+ */
+export function countWithoutDigit(limit, forbidden) {
+  if (limit < 0) return 0;
+
+  const digits = String(limit);
+  const memo = new Map();
+
+  const go = (pos, tight, started) => {
+    if (pos === digits.length) {
+      if (started) return 1;
+      // Nothing was ever placed: the value is 0, written "0".
+      return forbidden === 0 ? 0 : 1;
+    }
+
+    const key = `${pos},${tight ? 1 : 0},${started ? 1 : 0}`;
+    if (memo.has(key)) return memo.get(key);
+
+    const highest = tight ? Number(digits[pos]) : 9;
+    let count = 0;
+    for (let digit = 0; digit <= highest; digit++) {
+      const nowStarted = started || digit !== 0;
+      if (nowStarted && digit === forbidden) continue; // a REAL banned digit
+      count += go(pos + 1, tight && digit === highest, nowStarted);
+    }
+    memo.set(key, count);
+    return count;
+  };
+
+  return go(0, true, false);
+}
+
+// ============================================================================
+// 10. Game theory DP - minimax, memoisation and alpha-beta
+// ============================================================================
+/**
+ * First player's final margin when both play optimally. O(n^2).
+ *
+ * Two players alternately take a stone from EITHER END of the row. Both play
+ * perfectly. What is (my total - their total) at the end?
+ *
+ * **The trick that collapses it.** Do not track two scores and whose turn it
+ * is. Track a single number - the MARGIN from the perspective of whoever is
+ * about to move:
+ *
+ *     best[i][j] = the best achievable (my points - their points) on [i, j]
+ *
+ * Taking `values[i]` scores `values[i]` and then hands the opponent a position
+ * worth `best[i+1][j]` *to them*, which counts against me:
+ *
+ *     best[i][j] = max(values[i] - best[i+1][j],
+ *                      values[j] - best[i][j-1])
+ *
+ * That single minus sign is the whole of minimax. There is no separate
+ * "minimising player" branch, because the opponent's best margin is exactly the
+ * negative of mine - the game is zero-sum, and this is the NEGAMAX form.
+ *
+ * `O(n^2)` states, `O(1)` each. The naive tree is `O(2^n)`.
+ */
+export function stoneGameMargin(values) {
+  const n = values.length;
+  if (n === 0) return 0;
+
+  const best = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) best[i][i] = values[i]; // one stone left: take it
+
+  for (let length = 2; length <= n; length++) {
+    // INCREASING LENGTH, as always
+    for (let i = 0; i + length <= n; i++) {
+      const j = i + length - 1;
+      best[i][j] = Math.max(values[i] - best[i + 1][j], values[j] - best[i][j - 1]);
+    }
+  }
+  return best[0][n - 1];
+}
+
+/**
+ * The same answer by explicit tree search. Returns `[margin, nodesVisited]`.
+ *
+ * Written as an actual search rather than a table, because that is the form
+ * alpha-beta applies to - and the node counter is what makes the pruning
+ * measurable instead of merely claimed.
+ *
+ * **Alpha-beta.** Carry two bounds down the tree:
+ *
+ *     alpha  the best margin the side to move can already guarantee here
+ *     beta   the most the parent will ever allow this node to be worth
+ *
+ * If `alpha >= beta`, the parent already has a better option elsewhere and will
+ * never choose this branch, so the rest of it need not be examined. The exact
+ * value is irrelevant once it is known to be too good to be allowed, which is
+ * why the cutoff is safe and the answer unchanged.
+ *
+ * **The window has to be shifted, not just negated.** The textbook negamax line
+ * is `-search(child, -beta, -alpha)`, correct only when a node's value is
+ * exactly the negation of its child's. Here it is
+ *
+ *     value = face - child          (face = the stone just taken)
+ *
+ * so the window must be transformed through that expression too. Solving
+ * `alpha < face - child < beta` for the child gives
+ *
+ *     child window = (face - beta, face - alpha)
+ *
+ * and `face` differs per branch, so each child gets its own window. Passing the
+ * plain `(-beta, -alpha)` prunes branches that were still live and silently
+ * returns a wrong margin on some inputs.
+ */
+export function minimaxExplicit(values, useAlphaBeta) {
+  let nodes = 0;
+  const INF_MARGIN = 1e9;
+
+  const search = (i, j, alpha, beta) => {
+    nodes++;
+    if (i > j) return 0;
+
+    let bestMargin = -INF_MARGIN;
+    for (const takeLeft of [true, false]) {
+      // The stone taken on this branch, and the range left behind.
+      const face = takeLeft ? values[i] : values[j];
+      const lo = takeLeft ? i + 1 : i;
+      const hi = takeLeft ? j : j - 1;
+
+      // Window shifted through `face - child` - see above.
+      const child = search(lo, hi, face - beta, face - alpha);
+      const gain = face - child;
+
+      bestMargin = Math.max(bestMargin, gain);
+      alpha = Math.max(alpha, bestMargin);
+      if (useAlphaBeta && alpha >= beta) break; // cutoff
+    }
+    return bestMargin;
+  };
+
+  const margin = search(0, values.length - 1, -INF_MARGIN, INF_MARGIN);
+  return [margin, nodes];
+}
+
+/** Does the first player win outright? A margin above zero says yes. */
+export function canFirstPlayerWin(values) {
+  return stoneGameMargin(values) > 0;
+}
+
 function demo() {
   for (let n = 0; n < 15; n++) {
     const expected = fibNaive(n);
@@ -837,6 +1068,113 @@ function demo() {
     }
     assert.equal(subsetSumPartitionMinDifference(nums), bestDiff);
   }
+  // --- Digit DP ---------------------------------------------------------------
+  assert.equal(countWithDigitSumAtMost(0, 0), 1); // just 0 itself
+  assert.equal(countWithDigitSumAtMost(9, 5), 6); // 0,1,2,3,4,5
+  assert.equal(countWithDigitSumAtMost(20, 2), 6); // 0,1,2,10,11,20
+  assert.equal(countWithDigitSumAtMost(-1, 5), 0); // empty range
+  assert.equal(countWithDigitSumAtMost(100, 100), 101); // every value fits
+
+  // Against brute force over the whole range.
+  const digitSum = (x) =>
+    String(x)
+      .split("")
+      .reduce((a, c) => a + Number(c), 0);
+
+  for (let limit = 0; limit < 400; limit++) {
+    for (const cap of [0, 1, 5, 9, 15]) {
+      let expected = 0;
+      for (let x = 0; x <= limit; x++) if (digitSum(x) <= cap) expected++;
+      assert.equal(countWithDigitSumAtMost(limit, cap), expected);
+    }
+  }
+
+  assert.equal(countInRangeWithDigitSum(10, 20, 2), 3); // 10, 11, 20
+  assert.equal(countInRangeWithDigitSum(5, 5, 5), 1); // inclusive both ends
+  assert.equal(countInRangeWithDigitSum(20, 10, 5), 0); // inverted
+
+  assert.equal(countWithoutDigit(9, 4), 9); // 0-9 minus the 4
+  assert.equal(countWithoutDigit(50, 0), 45); // the leading-zero trap
+  for (let limit = 0; limit < 500; limit++) {
+    for (const forbidden of [0, 4, 7]) {
+      let expected = 0;
+      for (let x = 0; x <= limit; x++) if (!String(x).includes(String(forbidden))) expected++;
+      assert.equal(countWithoutDigit(limit, forbidden), expected);
+    }
+  }
+
+  // The point of the whole technique: a range no loop could ever walk.
+  assert.ok(countWithDigitSumAtMost(1e15, 20) > 0); // returns instantly
+
+  // --- Game theory DP ---------------------------------------------------------
+  assert.equal(stoneGameMargin([1, 5, 2]), -2); // every move loses ground
+  assert.equal(stoneGameMargin([5, 3, 4, 5]), 1);
+  assert.equal(stoneGameMargin([10]), 10); // take the only stone
+  assert.equal(stoneGameMargin([]), 0);
+  assert.equal(stoneGameMargin([2, 2]), 0); // symmetric: a draw
+
+  assert.ok(canFirstPlayerWin([5, 3, 4, 5]));
+  assert.ok(!canFirstPlayerWin([1, 5, 2]));
+
+  {
+    let gameSeed = 13;
+    const gameRandom = () => {
+      gameSeed = (gameSeed * 1103515245 + 12345) & 0x7fffffff;
+      return gameSeed / 0x7fffffff;
+    };
+
+    let strictlyFewer = 0;
+    let trials = 0;
+    for (let t = 0; t < 60; t++) {
+      const n = 4 + Math.floor(gameRandom() * 9);
+      const stones = Array.from({ length: n }, () => 1 + Math.floor(gameRandom() * 20));
+
+      const table = stoneGameMargin(stones);
+      const [plain, plainNodes] = minimaxExplicit(stones, false);
+      const [pruned, prunedNodes] = minimaxExplicit(stones, true);
+
+      assert.equal(plain, table); // search agrees with the DP
+      assert.equal(pruned, table); // pruning changes NOTHING
+
+      // Pruning can never COST nodes - that part is a guarantee.
+      assert.ok(prunedNodes <= plainNodes);
+      trials++;
+      if (prunedNodes < plainNodes) strictlyFewer++;
+    }
+    // How much it saves is input-dependent, so the claim is statistical: on a
+    // two-branch game with fixed move ordering there are positions where
+    // nothing can be cut. It should still win almost always.
+    assert.ok(strictlyFewer >= 0.9 * trials);
+
+    // Brute force over every play sequence, for small inputs.
+    const bruteMargin = (remaining) => {
+      if (remaining.length === 0) return 0;
+      return Math.max(
+        remaining[0] - bruteMargin(remaining.slice(1)),
+        remaining.at(-1) - bruteMargin(remaining.slice(0, -1)),
+      );
+    };
+    for (let t = 0; t < 40; t++) {
+      const stones = Array.from({ length: Math.floor(gameRandom() * 10) }, () =>
+        1 + Math.floor(gameRandom() * 9),
+      );
+      assert.equal(stoneGameMargin(stones), bruteMargin(stones));
+    }
+
+    // A deterministic case large enough that pruning definitely bites.
+    const ordered = Array.from({ length: 16 }, (_, i) => i + 1);
+    const [, unprunedNodes] = minimaxExplicit(ordered, false);
+    const [, alphaBetaNodes] = minimaxExplicit(ordered, true);
+    assert.ok(alphaBetaNodes < unprunedNodes);
+    // n levels of choices plus the empty-range leaves: 2^(n+1) - 1 nodes.
+    assert.equal(unprunedNodes, 2 ** (ordered.length + 1) - 1);
+
+    console.log(
+      `  minimax visited ${unprunedNodes} nodes, alpha-beta ${alphaBetaNodes} ` +
+        `(${100 - Math.floor((100 * alphaBetaNodes) / unprunedNodes)}% pruned)`,
+    );
+  }
+
 
   console.log("15-Dynamic-Programming (JavaScript): all checks passed");
   console.log(

@@ -55,6 +55,24 @@ remember `var f func(...)` before a recursive closure.
 | 27 | Find the Shortest Superstring | TSP where the cost is the overlap saved. | [LeetCode 943](https://leetcode.com/problems/find-the-shortest-superstring/) |
 | 28 | Travelling Salesman Problem | Held-Karp; note where 2^n stops fitting. | [GfG](https://www.geeksforgeeks.org/problems/travelling-salesman-problem2732/1) |
 
+## Digit DP
+| Problem | Hint | Link |
+|---------|------|------|
+| Numbers With Repeated Digits | Count the complement, and mind the `started` flag. | [LeetCode 1012](https://leetcode.com/problems/numbers-with-repeated-digits/) |
+| Count Numbers with Unique Digits | A bitmask of used digits plus `tight`. | [LeetCode 357](https://leetcode.com/problems/count-numbers-with-unique-digits/) |
+| Numbers At Most N Given Digit Set | The `tight` template almost verbatim. | [LeetCode 902](https://leetcode.com/problems/numbers-at-most-n-given-digit-set/) |
+| Count of Integers | Digit sum in a range - this section's exact problem. | [LeetCode 2801](https://leetcode.com/problems/count-stepping-numbers-in-range/) |
+| Non-negative Integers without Consecutive Ones | Digits in base 2; the same skeleton. | [LeetCode 600](https://leetcode.com/problems/non-negative-integers-without-consecutive-ones/) |
+
+## Game theory DP
+| Problem | Hint | Link |
+|---------|------|------|
+| Stone Game | Track the MARGIN, not two scores. | [LeetCode 877](https://leetcode.com/problems/stone-game/) |
+| Predict the Winner | The same recurrence; the answer is `margin >= 0`. | [LeetCode 486](https://leetcode.com/problems/predict-the-winner/) |
+| Stone Game II | State gains an M parameter - still negamax. | [LeetCode 1140](https://leetcode.com/problems/stone-game-ii/) |
+| Nim Game | Solve it by DP first, then find the one-line answer. | [LeetCode 292](https://leetcode.com/problems/nim-game/) |
+| Cat and Mouse | Game DP on a graph, with draws. Hard. | [LeetCode 913](https://leetcode.com/problems/cat-and-mouse/) |
+
 ## Self-check before moving on
 
 - [ ] I can state the two conditions that make a problem a DP problem.
@@ -67,3 +85,7 @@ remember `var f func(...)` before a recursive closure.
 - [ ] I can encode a subset as an integer and test/set membership with bit ops.
 - [ ] I know Held-Karp is O(2^n n^2) and caps out around n = 20.
 - [ ] I can tell when a bitmask is NOT needed (only the sums matter, not which).
+- [ ] I can write the `tight` template from memory.
+- [ ] I know when digit DP needs a `started` flag and when it does not.
+- [ ] I know why one minus sign replaces the whole minimising branch.
+- [ ] I know alpha-beta changes the cost, never the answer.

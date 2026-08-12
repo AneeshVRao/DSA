@@ -14,6 +14,13 @@ against the stated constraints, then optimise only if the constraints demand it.
 | 7 | Majority Element | `O(n log n)` sort vs `O(n)`/`O(1)` Boyer-Moore. | [LeetCode 169](https://leetcode.com/problems/majority-element/) |
 | 8 | Sieve of Eratosthenes | Why is it `O(n log log n)`, not `O(n^2)`? | [GfG](https://www.geeksforgeeks.org/sieve-of-eratosthenes/) |
 
+## Empirical analysis
+| Problem | Hint | Link |
+|---------|------|------|
+| Time-complexity practice set | Read the constraints, name the class BEFORE coding. | [GfG](https://www.geeksforgeeks.org/practice-questions-time-complexity-analysis/) |
+| Sort an Array | Implement two sorts, count the comparisons, compare the growth. | [LeetCode 912](https://leetcode.com/problems/sort-an-array/) |
+| Kth Largest Element in an Array | Measure heap vs quickselect vs full sort at several sizes. | [LeetCode 215](https://leetcode.com/problems/kth-largest-element-in-an-array/) |
+
 ## Self-check before moving on
 
 - [ ] I use the 10^8-operations-per-second rule to sanity check a design.
@@ -21,3 +28,6 @@ against the stated constraints, then optimise only if the constraints demand it.
 - [ ] I write `for (const auto& x : v)`, not `for (auto x : v)`.
 - [ ] I know `map` is `O(log n)` and `unordered_map` is `O(1)` average.
 - [ ] I count recursion depth against the stack limit.
+- [ ] I assert on operation COUNTS and only report wall-clock times.
+- [ ] I take the MINIMUM of several runs, never the mean.
+- [ ] I can name a complexity class from its growth ratio alone.

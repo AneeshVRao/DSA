@@ -153,6 +153,51 @@ a.toSorted((x, y) => x - y);    // ES2023: sorted COPY, does not mutate
 | `dutchFlagSort` | `O(n)` | `O(1)` |
 | `mergeSorted` | `O(n + m)` | `O(n + m)` |
 
+## Memory layout - why the same loop has two speeds
+
+Two loops. Same complexity, same answer, one line different:
+
+```text
+for r: for c: total += grid[r][c]     <- row-major:    3-15x faster
+for c: for r: total += grid[r][c]     <- column-major
+```
+
+Memory is a flat line, and a 2-D grid has to be flattened onto it somehow.
+**Row-major** order (C, C++, Java, Go, Python, JavaScript) stores row 0, then
+row 1, and so on. Column-major (Fortran, MATLAB, R) does the opposite.
+
+The CPU never fetches one value - it fetches a **cache line**, typically 64
+bytes. Walking along a row means every fetch delivers the next 8-15 iterations
+for free: one miss, then a run of hits. Walking down a column jumps a whole row
+each step, so every access is a fresh miss and the other 15 values in each line
+are evicted unused. Same memory bandwidth spent; a fraction of it useful.
+
+> This is the gap between **complexity** and **constant factor**. Both loops are
+> `O(rows * cols)`, identically. Big-O deliberately ignores what the hardware is
+> doing - which is why it is necessary but never sufficient.
+
+Measured in this chapter: **~3x in Python, ~9x in Go, ~15x in C++.** The
+interpreter overhead in Python partly masks the effect; the closer you get to
+the metal, the more it dominates.
+
+### The aliasing trap
+
+```text
+Python  [[0] * cols] * rows                          <- every row is ONE list
+JS      new Array(rows).fill(new Array(cols))        <- every row is ONE array
+Go      for i := range grid { grid[i] = row }        <- one backing array
+```
+
+The inner container is built **once** and its reference copied. Writing to
+`grid[0][0]` writes to every row at once.
+
+It is silent: the shape is right, the values start right, and it only goes wrong
+on the first write. Build rows with a comprehension / `Array.from` / a fresh
+`make` per row instead. The demo proves both behaviours rather than describing
+them.
+
+---
+
 ## Run the code
 
 ```bash

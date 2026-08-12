@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -311,6 +313,67 @@ vector<int> mergeSorted(const vector<int>& a, const vector<int>& b) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Memory layout: why the same loop has two speeds
+// ============================================================================
+
+// Walk the grid the way it is stored: row by row.
+//
+// Memory is a flat line, and a 2-D grid has to be flattened onto it somehow.
+// ROW-MAJOR order (C, C++, Java, Go, Python) stores row 0, then row 1, and so
+// on. Column-major (Fortran, MATLAB, R) does the opposite.
+//
+// The CPU never fetches one value. It fetches a CACHE LINE - 64 bytes on x86,
+// so 16 ints. Walking along a row means every fetch delivers the next 15
+// iterations for free: one miss, then fifteen hits.
+long long sumRowMajor(const vector<int>& flat, size_t rows, size_t cols) {
+    long long total = 0;
+    for (size_t r = 0; r < rows; r++) {
+        for (size_t c = 0; c < cols; c++) total += flat[r * cols + c];
+    }
+    return total;
+}
+
+// Walk ACROSS the storage order: column by column.
+//
+// Identical arithmetic, identical result, two lines swapped - and several times
+// slower on the same data.
+//
+// Each step jumps a whole row ahead in memory. Once a row exceeds a cache line
+// (it usually does), every access is a fresh miss, and the 64 bytes fetched are
+// evicted before the other 15 values are ever used. The memory bandwidth spent
+// is the same; the useful fraction of it is not.
+//
+// This is the gap between an algorithm's COMPLEXITY - both loops are
+// O(rows * cols), identically - and its CONSTANT FACTOR. Big-O deliberately
+// ignores what the hardware is doing, which is why it is necessary but never
+// sufficient.
+long long sumColumnMajor(const vector<int>& flat, size_t rows, size_t cols) {
+    long long total = 0;
+    for (size_t c = 0; c < cols; c++) {
+        for (size_t r = 0; r < rows; r++) total += flat[r * cols + c];
+    }
+    return total;
+}
+
+// The same sum over vector<vector<int>> - and it is NOT the same memory.
+//
+// A vector<vector<int>> is a vector of vector HEADERS. Each row is a separate
+// heap allocation, so the rows are scattered rather than contiguous, and every
+// access costs an extra indirection through the row pointer.
+//
+// For a genuinely 2-D array, prefer ONE flat vector plus index arithmetic
+// (`flat[r * cols + c]`) - which is exactly what the C array `int a[R][C]`
+// already is. The nested form is convenient and ragged-capable; the flat form
+// is what the cache wants.
+long long sumNested(const vector<vector<int>>& grid) {
+    long long total = 0;
+    for (const vector<int>& row : grid) {
+        for (int value : row) total += value;
+    }
+    return total;
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -399,6 +462,58 @@ int main() {
     }
 
     assert(PrefixSum2D({}).rangeSum(0, 0, 0, 0) == 0);   // no rows at all
+    // --- Memory layout --------------------------------------------------------
+    {
+        const size_t side = 3000;
+        vector<int> flat(side * side);
+        for (size_t r = 0; r < side; r++) {
+            for (size_t c = 0; c < side; c++) flat[r * side + c] = int(r + c);
+        }
+
+        auto measureBest = [](auto fn, int repeats = 3) {
+            double best = 1e18;
+            for (int i = 0; i < repeats; i++) {
+                auto start = chrono::steady_clock::now();
+                volatile long long sink = fn();      // volatile: do not optimise it away
+                (void)sink;
+                best = min(best, chrono::duration<double, milli>(
+                                     chrono::steady_clock::now() - start).count());
+            }
+            return best;
+        };
+
+        double rowMs = measureBest([&] { return sumRowMajor(flat, side, side); });
+        double colMs = measureBest([&] { return sumColumnMajor(flat, side, side); });
+
+        // The part that is a FACT: both orders compute the same sum.
+        long long expected = 0;
+        for (size_t r = 0; r < side; r++) {
+            for (size_t c = 0; c < side; c++) expected += static_cast<long long>(r + c);
+        }
+        assert(sumRowMajor(flat, side, side) == expected);
+        assert(sumColumnMajor(flat, side, side) == expected);
+
+        // The part that is a MEASUREMENT: row-major is normally several times
+        // faster here. The assertion is deliberately loose - a busy machine can
+        // distort any timing - but the printed ratio shows the real effect.
+        assert(rowMs < colMs * 1.5);
+
+        printf("  row-major    %7.1f ms\n", rowMs);
+        printf("  column-major %7.1f ms   <- %.1fx slower, same O(n^2)\n",
+               colMs, colMs / rowMs);
+
+        // vector<vector<int>> gives the same answer over scattered allocations.
+        vector<vector<int>> nested(8, vector<int>(8));
+        long long nestedExpected = 0;
+        for (size_t r = 0; r < 8; r++) {
+            for (size_t c = 0; c < 8; c++) {
+                nested[r][c] = int(r * 8 + c);
+                nestedExpected += static_cast<long long>(r * 8 + c);
+            }
+        }
+        assert(sumNested(nested) == nestedExpected);
+    }
+
 
     cout << "03-Arrays (C++): all checks passed\n";
     cout << "  2-D prefix sums checked against brute force on every rectangle\n";

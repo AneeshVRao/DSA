@@ -97,7 +97,7 @@ Each row links to that topic's full write-up in each language.
 | 12 | **Binary Search Tree** | 3-case deletion, validation, AVL rotations | [→](Python/12-Binary-Search-Tree/) | [→](C%2B%2B/12-Binary-Search-Tree/) | [→](JavaScript/12-Binary-Search-Tree/) | [→](Golang/12-Binary-Search-Tree/) |
 | 13 | **Heaps & Priority Queue** | Binary heap, top-k, merge-k, two-heap median, indexed PQ | [→](Python/13-Heaps-Priority-Queue/) | [→](C%2B%2B/13-Heaps-Priority-Queue/) | [→](JavaScript/13-Heaps-Priority-Queue/) | [→](Golang/13-Heaps-Priority-Queue/) |
 | 14 | **Graphs** | BFS/DFS, topological sort, Dijkstra, Floyd-Warshall, SCC | [→](Python/14-Graphs/) | [→](C%2B%2B/14-Graphs/) | [→](JavaScript/14-Graphs/) | [→](Golang/14-Graphs/) |
-| 15 | **Dynamic Programming** | Memo vs tabulation, every classic family, interval + bitmask | [→](Python/15-Dynamic-Programming/) | [→](C%2B%2B/15-Dynamic-Programming/) | [→](JavaScript/15-Dynamic-Programming/) | [→](Golang/15-Dynamic-Programming/) |
+| 15 | **Dynamic Programming** | Memo vs tabulation, every family, interval + bitmask + digit + game | [→](Python/15-Dynamic-Programming/) | [→](C%2B%2B/15-Dynamic-Programming/) | [→](JavaScript/15-Dynamic-Programming/) | [→](Golang/15-Dynamic-Programming/) |
 | 16 | **Greedy** | Sort keys, exchange arguments, and where greedy breaks | [→](Python/16-Greedy/) | [→](C%2B%2B/16-Greedy/) | [→](JavaScript/16-Greedy/) | [→](Golang/16-Greedy/) |
 | 17 | **Bit Manipulation** | XOR tricks, `n & (n-1)`, bitmasks as sets, Gray code | [→](Python/17-Bit-Manipulation/) | [→](C%2B%2B/17-Bit-Manipulation/) | [→](JavaScript/17-Bit-Manipulation/) | [→](Golang/17-Bit-Manipulation/) |
 | 18 | **Trie** | Prefix tree, autocomplete, wildcards, bitwise trie | [→](Python/18-Trie/) | [→](C%2B%2B/18-Trie/) | [→](JavaScript/18-Trie/) | [→](Golang/18-Trie/) |
@@ -129,9 +129,13 @@ worthwhile; writing 30 more files was not:
 | Geometry | convex hull, closest pair, sweep-line - the whole area |
 | Theory | matroids (the formal proof of *why* greedy works) |
 
-**Known gaps I would close next**, in order: digit DP and game-theory DP
-(minimax) in chapter 15, expression trees in chapter 11, empirical benchmarking
-in chapter 02, and row-major vs column-major cache locality in chapter 03.
+**Recently closed** — all five now implemented and verified in every language:
+digit DP and game-theory DP with alpha-beta (ch. 15), expression trees with
+shunting-yard (ch. 11), empirical benchmarking (ch. 02), and row-major vs
+column-major cache locality (ch. 03).
+
+No known gaps remain inside chapters 01–20. What is left is the "deliberately
+not covered" table above — and that is a scope decision, not an oversight.
 
 ---
 
@@ -275,6 +279,10 @@ Copy this into an issue, or edit it in place and commit as you go.
 | "which nodes can reach each other" | Kosaraju / Tarjan SCC | [14](Python/14-Graphs/) |
 | "choose where to split a range" | interval DP | [15](Python/15-Dynamic-Programming/) |
 | "which subset, not how many" | bitmask DP | [15](Python/15-Dynamic-Programming/) |
+| "count numbers up to N with ..." | digit DP (the `tight` flag) | [15](Python/15-Dynamic-Programming/) |
+| "both players play optimally" | game DP / negamax + alpha-beta | [15](Python/15-Dynamic-Programming/) |
+| "evaluate / parse an expression" | expression tree + shunting-yard | [11](Python/11-Trees/) |
+| "why is it slow when Big-O says fast?" | cache locality, constant factors | [03](Python/03-Arrays/) · [02](Python/02-Time-Space-Complexity/) |
 | "guaranteed O(log n), any input order" | AVL tree | [12](Python/12-Binary-Search-Tree/) |
 | "change a queued item's priority" | indexed priority queue | [13](Python/13-Heaps-Priority-Queue/) |
 | "constant space, find the odd one out" | XOR | [17](Python/17-Bit-Manipulation/) |

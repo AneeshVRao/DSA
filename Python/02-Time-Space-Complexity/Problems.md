@@ -14,6 +14,13 @@ brute force, state its complexity, then find the constraint that kills it.
 | 7 | Search Insert Position | Prove your binary search is `O(log n)` by counting iterations. | [LeetCode 35](https://leetcode.com/problems/search-insert-position/) |
 | 8 | Analysis of Algorithms quiz | Pure Big-O drills, no coding. | [GfG](https://www.geeksforgeeks.org/analysis-of-algorithms/) |
 
+## Empirical analysis
+| Problem | Hint | Link |
+|---------|------|------|
+| Time-complexity practice set | Read the constraints, name the class BEFORE coding. | [GfG](https://www.geeksforgeeks.org/practice-questions-time-complexity-analysis/) |
+| Sort an Array | Implement two sorts, count the comparisons, compare the growth. | [LeetCode 912](https://leetcode.com/problems/sort-an-array/) |
+| Kth Largest Element in an Array | Measure heap vs quickselect vs full sort at several sizes. | [LeetCode 215](https://leetcode.com/problems/kth-largest-element-in-an-array/) |
+
 ## Self-check before moving on
 
 - [ ] Given `n <= 10^5`, I immediately aim for `O(n log n)` or better.
@@ -21,3 +28,6 @@ brute force, state its complexity, then find the constraint that kills it.
 - [ ] I count recursion depth as space, not just time.
 - [ ] I can explain why `list.append` is amortised `O(1)`.
 - [ ] I can turn an `O(2^n)` recursion into `O(n)` with memoisation.
+- [ ] I assert on operation COUNTS and only report wall-clock times.
+- [ ] I take the MINIMUM of several runs, never the mean.
+- [ ] I can name a complexity class from its growth ratio alone.

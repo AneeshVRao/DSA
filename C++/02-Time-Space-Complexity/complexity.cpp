@@ -9,10 +9,14 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <numeric>
+#include <random>
+#include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 using namespace std;
@@ -164,6 +168,138 @@ void wallClockDemo() {
 }
 
 // -------------------------------------------------------------------- demo --
+// ============================================================================
+// Empirical analysis - does the theory actually hold?
+// ============================================================================
+
+// Merge sort that reports its comparison count. O(n log n).
+//
+// The count is what makes this checkable. Wall-clock time depends on the
+// machine, the compiler flags and whatever else is running; a COMPARISON COUNT
+// is deterministic, so the theory can be asserted rather than eyeballed.
+// Sorts nums[lo, hi) using one shared scratch buffer, returning the comparison
+// count. Working on INDEX RANGES rather than building sub-vectors matters twice
+// over: it allocates once instead of O(n log n) times, and it keeps the hot
+// loop reading straight down contiguous memory.
+long long mergeSortRange(vector<int>& nums, vector<int>& scratch,
+                         size_t lo, size_t hi) {
+    if (hi - lo <= 1) return 0;
+
+    size_t mid = lo + (hi - lo) / 2;
+    long long comparisons = mergeSortRange(nums, scratch, lo, mid) +
+                            mergeSortRange(nums, scratch, mid, hi);
+
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        comparisons++;
+        scratch[k++] = (nums[i] <= nums[j]) ? nums[i++] : nums[j++];
+    }
+    while (i < mid) scratch[k++] = nums[i++];
+    while (j < hi) scratch[k++] = nums[j++];
+    for (size_t t = lo; t < hi; t++) nums[t] = scratch[t];
+
+    return comparisons;
+}
+
+pair<vector<int>, long long> mergeSortCounted(vector<int> nums) {
+    vector<int> scratch(nums.size());
+    long long comparisons = mergeSortRange(nums, scratch, 0, nums.size());
+    return {nums, comparisons};
+}
+
+// Insertion sort that reports its comparison count.
+//
+// O(n^2) on reversed input, but O(n) on already-sorted input - the adaptive
+// best case that makes it the base case inside every real hybrid sort.
+pair<vector<int>, long long> insertionSortCounted(vector<int> nums) {
+    long long comparisons = 0;
+    for (size_t i = 1; i < nums.size(); i++) {
+        int value = nums[i];
+        long j = long(i) - 1;
+        while (j >= 0) {
+            comparisons++;
+            if (nums[size_t(j)] <= value) break;
+            nums[size_t(j) + 1] = nums[size_t(j)];
+            j--;
+        }
+        nums[size_t(j + 1)] = value;
+    }
+    return {nums, comparisons};
+}
+
+// Best-of-N wall-clock milliseconds.
+//
+// MINIMUM, not mean. Timing noise is one-sided - a scheduler interrupt or a
+// cache eviction can only make a run slower, never faster - so the minimum is
+// the closest estimate of the true cost. Averaging just folds the noise in.
+//
+// steady_clock, not system_clock: the latter can jump if the wall clock is
+// adjusted mid-measurement, which is exactly the kind of silent nonsense you
+// do not want in a benchmark.
+template <typename Fn>
+double measureMs(Fn fn, int repeats = 3) {
+    double best = 1e18;
+    for (int r = 0; r < repeats; r++) {
+        auto start = chrono::steady_clock::now();
+        fn();
+        auto elapsed = chrono::duration<double, milli>(
+                           chrono::steady_clock::now() - start).count();
+        best = min(best, elapsed);
+    }
+    return best;
+}
+
+// Ratio between consecutive measurements. The shape of the curve.
+//
+// Doubling n and watching the ratio is how a complexity class is identified
+// from data alone:
+//
+//     O(1)        ratio -> 1
+//     O(log n)    ratio -> 1   (grows by a constant, not a factor)
+//     O(n)        ratio -> 2
+//     O(n log n)  ratio -> slightly above 2, creeping up
+//     O(n^2)      ratio -> 4
+//
+// The empirical counterpart to reading the exponent off a formula.
+vector<double> growthRatios(const vector<long long>& counts) {
+    vector<double> ratios;
+    for (size_t i = 0; i + 1 < counts.size(); i++) {
+        ratios.push_back(double(counts[i + 1]) / double(counts[i]));
+    }
+    return ratios;
+}
+
+// Measure the two classes side by side, and print the growth.
+void benchmarkTable() {
+    vector<int> sizes{250, 500, 1000, 2000};
+    vector<long long> mergeCounts, insertionCounts;
+
+    printf("\n%6s | %10s | %11s | %9s | %10s\n",
+           "n", "merge ops", "insert ops", "merge ms", "insert ms");
+    printf("%s\n", string(60, '-').c_str());
+
+    for (int n : sizes) {
+        vector<int> reversedInput(static_cast<size_t>(n));  // static_cast, not size_t(n): the latter is a function declaration (most vexing parse)
+        for (int i = 0; i < n; i++) reversedInput[static_cast<size_t>(i)] = n - i;
+
+        long long mergeOps = mergeSortCounted(reversedInput).second;
+        long long insertionOps = insertionSortCounted(reversedInput).second;
+        double mergeMs = measureMs([&] { mergeSortCounted(reversedInput); });
+        double insertionMs = measureMs([&] { insertionSortCounted(reversedInput); });
+
+        mergeCounts.push_back(mergeOps);
+        insertionCounts.push_back(insertionOps);
+        printf("%6d | %10lld | %11lld | %9.2f | %10.2f\n",
+               n, mergeOps, insertionOps, mergeMs, insertionMs);
+    }
+
+    printf("\n  merge ops     grow x");
+    for (double r : growthRatios(mergeCounts)) printf("%.2f ", r);
+    printf(" -> just over 2: O(n log n)\n  insertion ops grow x");
+    for (double r : growthRatios(insertionCounts)) printf("%.2f ", r);
+    printf(" -> 4: O(n^2)\n");
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -205,10 +341,65 @@ int main() {
 
     vector<int> small{1, 2, 3};
     assert(sumRecursive(small) == sumIterative(small));
+    // --- Empirical analysis ---------------------------------------------------
+    // Sorting is correct in both cases - the point is what it COSTS.
+    {
+        mt19937 benchRng(2);
+        for (int trial = 0; trial < 30; trial++) {
+            vector<int> data(benchRng() % 41);
+            for (int& x : data) x = int(benchRng() % 101) - 50;
+            vector<int> expected = data;
+            sort(expected.begin(), expected.end());
+            assert(mergeSortCounted(data).first == expected);
+            assert(insertionSortCounted(data).first == expected);
+        }
+
+        // The counts are deterministic, so the theory is ASSERTABLE - unlike
+        // the wall-clock numbers, which depend on the machine.
+        vector<int> sizes{250, 500, 1000, 2000};
+        vector<long long> mergeCounts, insertionCounts;
+        for (int n : sizes) {
+            vector<int> reversedInput(static_cast<size_t>(n));  // static_cast, not size_t(n): the latter is a function declaration (most vexing parse)
+            for (int i = 0; i < n; i++) reversedInput[static_cast<size_t>(i)] = n - i;
+            mergeCounts.push_back(mergeSortCounted(reversedInput).second);
+            insertionCounts.push_back(insertionSortCounted(reversedInput).second);
+        }
+
+        // Insertion sort on reversed input is exactly the worst case: every one
+        // of the i previous elements is compared, so the total is n(n-1)/2.
+        for (size_t k = 0; k < sizes.size(); k++) {
+            long long n = sizes[k];
+            assert(insertionCounts[k] == n * (n - 1) / 2);
+        }
+
+        // Merge sort's comparison count sits in the tight n log n window.
+        for (size_t k = 0; k < sizes.size(); k++) {
+            double n = sizes[k];
+            assert(double(mergeCounts[k]) <= n * ceil(log2(n)));
+            assert(double(mergeCounts[k]) >= n * log2(n) / 2);
+        }
+
+        // The growth ratios ARE the complexity class, read off the data.
+        for (double ratio : growthRatios(insertionCounts)) assert(ratio > 3.9 && ratio < 4.1);
+        for (double ratio : growthRatios(mergeCounts)) assert(ratio > 2.0 && ratio < 2.5);
+
+        // Quadratic must eventually lose, by a widening margin. This compares
+        // OPERATION COUNTS, so it is a fact about the algorithms, not the CPU.
+        assert(double(insertionCounts.front()) / double(mergeCounts.front())
+               < double(insertionCounts.back()) / double(mergeCounts.back()));
+        assert(insertionCounts.back() > 100 * mergeCounts.back());
+
+        // The ADAPTIVE best case: already-sorted input is O(n).
+        vector<int> ascending(2000);
+        iota(ascending.begin(), ascending.end(), 0);
+        assert(insertionSortCounted(ascending).second == 1999);
+    }
+
 
     cout << "02-Time-Space-Complexity (C++): all checks passed\n\n";
 
     growthTable();
     wallClockDemo();
+    benchmarkTable();
     return 0;
 }

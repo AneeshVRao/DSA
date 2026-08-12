@@ -580,6 +580,253 @@ func EulerInOut(root *TreeNode) map[int][2]int {
 	return times
 }
 
+// ============================================================================
+// Expression trees - an AST for arithmetic
+// ============================================================================
+
+// precedence maps each binary operator to its binding strength.
+var precedence = map[string]int{"+": 1, "-": 1, "*": 2, "/": 2}
+
+func isExprOperator(token string) bool {
+	_, ok := precedence[token]
+	return ok
+}
+
+// ExprNode is a node in an expression tree: an operator with two children, or
+// a leaf holding a number.
+//
+// An expression tree is the smallest interesting abstract syntax tree, and it
+// makes the three traversals mean something concrete rather than academic:
+//
+//	Tree for (3 + 4) * 2:   infix   (3 + 4) * 2    <- inorder
+//	                        postfix  3 4 + 2 *     <- postorder
+//	                        prefix   * + 3 4 2     <- preorder
+//
+// The tree carries precedence and grouping in its SHAPE, so postfix and prefix
+// need no brackets at all - the structure is unambiguous without them. Only
+// infix needs parentheses, because it throws that information away.
+//
+// This is what a compiler front-end builds, and evaluating it is a post-order
+// fold: children first, then combine.
+type ExprNode struct {
+	Value string
+	Left  *ExprNode
+	Right *ExprNode
+}
+
+func (n *ExprNode) IsOperator() bool { return isExprOperator(n.Value) }
+
+// TokenizeExpression splits into numbers, operators and brackets. Multi-digit
+// numbers survive.
+func TokenizeExpression(expression string) []string {
+	var tokens []string
+	i := 0
+	for i < len(expression) {
+		c := expression[i]
+		switch {
+		case c == ' ' || c == '\t':
+			i++
+		case c >= '0' && c <= '9':
+			start := i
+			for i < len(expression) &&
+				((expression[i] >= '0' && expression[i] <= '9') || expression[i] == '.') {
+				i++
+			}
+			tokens = append(tokens, expression[start:i])
+		default:
+			tokens = append(tokens, string(c))
+			i++
+		}
+	}
+	return tokens
+}
+
+// InfixToPostfix converts infix to postfix in one pass. O(n). Shunting-yard.
+//
+// Numbers go straight to the output. Operators wait on a stack until something
+// of LOWER precedence arrives, at which point they are popped - which is
+// exactly what makes `*` bind tighter than `+` with no lookahead or recursion.
+//
+// Left associativity is the `>=` in the pop condition: for `8 - 3 - 2` the
+// first `-` is popped when the second arrives, giving `(8-3)-2 = 3` rather than
+// `8-(3-2) = 7`. Changing it to `>` would silently make subtraction
+// right-associative - a real bug, and an easy one to miss.
+//
+// Returns an error on malformed input. The bare algorithm does not validate at
+// all - see the comment in the body.
+func InfixToPostfix(tokens []string) ([]string, error) {
+	var output, operators []string
+
+	// Shunting-yard on its own does NOT validate. Fed "+ 1 2" it happily emits
+	// "1 2 +" and reports success, silently reinterpreting prefix input as
+	// infix. Tracking what is expected next is what turns a garbled expression
+	// into an error instead of a plausible wrong answer.
+	expectOperand := true
+
+	for _, token := range tokens {
+		switch {
+		case isExprOperator(token):
+			if expectOperand {
+				return nil, fmt.Errorf("operator %q where an operand was expected", token)
+			}
+			for len(operators) > 0 && operators[len(operators)-1] != "(" &&
+				precedence[operators[len(operators)-1]] >= precedence[token] {
+				output = append(output, operators[len(operators)-1]) // >= : LEFT assoc
+				operators = operators[:len(operators)-1]
+			}
+			operators = append(operators, token)
+			expectOperand = true
+
+		case token == "(":
+			if !expectOperand {
+				return nil, fmt.Errorf("'(' directly after an operand")
+			}
+			operators = append(operators, token)
+
+		case token == ")":
+			if expectOperand {
+				return nil, fmt.Errorf("')' where an operand was expected")
+			}
+			for len(operators) > 0 && operators[len(operators)-1] != "(" {
+				output = append(output, operators[len(operators)-1])
+				operators = operators[:len(operators)-1]
+			}
+			if len(operators) == 0 {
+				return nil, fmt.Errorf("unbalanced parentheses")
+			}
+			operators = operators[:len(operators)-1] // discard the "("
+			// A closed group behaves as a completed operand.
+
+		default:
+			if !expectOperand {
+				return nil, fmt.Errorf("two operands in a row near %q", token)
+			}
+			output = append(output, token) // a number
+			expectOperand = false
+		}
+	}
+
+	if expectOperand {
+		return nil, fmt.Errorf("expression ends with an operator")
+	}
+
+	for len(operators) > 0 {
+		if operators[len(operators)-1] == "(" {
+			return nil, fmt.Errorf("unbalanced parentheses")
+		}
+		output = append(output, operators[len(operators)-1])
+		operators = operators[:len(operators)-1]
+	}
+	return output, nil
+}
+
+// BuildFromPostfix builds the tree from postfix in one stack pass. O(n).
+//
+// Postfix is the natural input: by the time an operator appears, both of its
+// operands are already complete subtrees sitting on the stack.
+//
+// The RIGHT operand pops FIRST - it was pushed last. Getting that backwards
+// still builds a valid-looking tree and still evaluates correctly for `+` and
+// `*`; it silently reverses `-` and `/`. A test using only commutative
+// operators would never catch it.
+func BuildFromPostfix(tokens []string) (*ExprNode, error) {
+	var stack []*ExprNode
+
+	for _, token := range tokens {
+		if isExprOperator(token) {
+			if len(stack) < 2 {
+				return nil, fmt.Errorf("operator %q has too few operands", token)
+			}
+			right := stack[len(stack)-1] // RIGHT first
+			left := stack[len(stack)-2]
+			stack = stack[:len(stack)-2]
+			stack = append(stack, &ExprNode{Value: token, Left: left, Right: right})
+		} else {
+			stack = append(stack, &ExprNode{Value: token})
+		}
+	}
+
+	if len(stack) != 1 {
+		return nil, fmt.Errorf("malformed expression")
+	}
+	return stack[0], nil
+}
+
+// BuildExpressionTree turns an infix string into a tree.
+func BuildExpressionTree(expression string) (*ExprNode, error) {
+	postfix, err := InfixToPostfix(TokenizeExpression(expression))
+	if err != nil {
+		return nil, err
+	}
+	return BuildFromPostfix(postfix)
+}
+
+// EvaluateExpression evaluates bottom-up. O(n) - a post-order fold.
+func EvaluateExpression(node *ExprNode) (float64, error) {
+	if !node.IsOperator() {
+		value, err := strconv.ParseFloat(node.Value, 64)
+		if err != nil {
+			return 0, fmt.Errorf("bad number %q", node.Value)
+		}
+		return value, nil
+	}
+
+	left, err := EvaluateExpression(node.Left)
+	if err != nil {
+		return 0, err
+	}
+	right, err := EvaluateExpression(node.Right)
+	if err != nil {
+		return 0, err
+	}
+
+	switch node.Value {
+	case "+":
+		return left + right, nil
+	case "-":
+		return left - right, nil
+	case "*":
+		return left * right, nil
+	default:
+		if right == 0 {
+			// Go would return +Inf rather than panicking - surface it instead.
+			return 0, fmt.Errorf("division by zero in expression")
+		}
+		return left / right, nil
+	}
+}
+
+// ToPrefix is PREorder: operator, left, right. No brackets - unambiguous.
+func ToPrefix(node *ExprNode) []string {
+	if !node.IsOperator() {
+		return []string{node.Value}
+	}
+	out := []string{node.Value}
+	out = append(out, ToPrefix(node.Left)...)
+	return append(out, ToPrefix(node.Right)...)
+}
+
+// ToPostfix is POSTorder: left, right, operator. What a stack machine runs.
+func ToPostfix(node *ExprNode) []string {
+	if !node.IsOperator() {
+		return []string{node.Value}
+	}
+	out := ToPostfix(node.Left)
+	out = append(out, ToPostfix(node.Right)...)
+	return append(out, node.Value)
+}
+
+// ToInfix is INorder, fully parenthesised.
+//
+// Every operator gets brackets. Emitting infix without them would lose the
+// grouping the tree encodes - `* + 3 4 2` is unambiguous, `3 + 4 * 2` is not.
+func ToInfix(node *ExprNode) string {
+	if !node.IsOperator() {
+		return node.Value
+	}
+	return "(" + ToInfix(node.Left) + " " + node.Value + " " + ToInfix(node.Right) + ")"
+}
+
 func assert(cond bool, msg string) {
 	if !cond {
 		panic("assertion failed: " + msg)
@@ -762,6 +1009,99 @@ func main() {
 			check(node.Right)
 		}
 		check(root)
+	}
+	// --- Expression trees ----------------------------------------------------
+	exprTree, exprErr := BuildExpressionTree("3 + 4 * 2")
+	assert(exprErr == nil, "3 + 4 * 2 parses")
+	exprValue, _ := EvaluateExpression(exprTree)
+	assert(exprValue == 11, "* binds tighter than +")
+	assert(fmt.Sprint(ToPostfix(exprTree)) == "[3 4 2 * +]", "postfix form")
+	assert(fmt.Sprint(ToPrefix(exprTree)) == "[+ 3 * 4 2]", "prefix form")
+	assert(ToInfix(exprTree) == "(3 + (4 * 2))", "fully exprBracketed infix")
+
+	exprBracketed, _ := BuildExpressionTree("(3 + 4) * 2")
+	exprValue, _ = EvaluateExpression(exprBracketed)
+	assert(exprValue == 14, "brackets override precedence")
+	assert(fmt.Sprint(ToPostfix(exprBracketed)) == "[3 4 + 2 *]", "exprBracketed postfix")
+	assert(fmt.Sprint(ToPrefix(exprBracketed)) == "[* + 3 4 2]", "exprBracketed prefix")
+
+	// Left associativity and operand order. Both are silent when wrong: right
+	// for + and *, WRONG for - and /.
+	for _, tc := range []struct {
+		text     string
+		expected float64
+	}{
+		{"8 - 3 - 2", 3},  // not 7
+		{"16 / 4 / 2", 2}, // not 8
+		{"8 - 3", 5},      // not -5
+		{"42", 42},        // a lone leaf
+		{"2 * (3 + 4) - 5", 9},
+	} {
+		node, parseErr := BuildExpressionTree(tc.text)
+		assert(parseErr == nil, "parses: "+tc.text)
+		exprGot, evalErr := EvaluateExpression(node)
+		assert(evalErr == nil && exprGot == tc.expected, "evaluates: "+tc.text)
+	}
+
+	// Malformed input is rejected, not silently mis-parsed.
+	for _, bad := range []string{"(1 + 2", "1 + 2)", "1 +", "+ 1 2", "1 2"} {
+		_, badErr := BuildExpressionTree(bad)
+		assert(badErr != nil, "rejects: "+bad)
+	}
+
+	divByZero, _ := BuildExpressionTree("1 / 0")
+	_, zeroErr := EvaluateExpression(divByZero)
+	assert(zeroErr != nil, "division by zero is an error")
+
+	// Against an INDEPENDENT exprReference on random expressions: collapse every
+	// `*` first, then add and subtract what is left. That directly encodes
+	// "* binds tighter than +", so it tests precedence against a different
+	// implementation rather than against itself.
+	exprRng := rand.New(rand.NewSource(11))
+	for trial := 0; trial < 200; trial++ {
+		exprTerms := []string{strconv.Itoa(exprRng.Intn(9) + 1)}
+		for k := 0; k < exprRng.Intn(5)+1; k++ {
+			exprTerms = append(exprTerms, string("+-*"[exprRng.Intn(3)]))
+			exprTerms = append(exprTerms, strconv.Itoa(exprRng.Intn(9)+1))
+		}
+
+		exprCollapsed := []string{exprTerms[0]}
+		for k := 1; k < len(exprTerms); k += 2 {
+			if exprTerms[k] == "*" {
+				a, _ := strconv.Atoi(exprCollapsed[len(exprCollapsed)-1])
+				b, _ := strconv.Atoi(exprTerms[k+1])
+				exprCollapsed[len(exprCollapsed)-1] = strconv.Itoa(a * b)
+			} else {
+				exprCollapsed = append(exprCollapsed, exprTerms[k], exprTerms[k+1])
+			}
+		}
+		exprReference, _ := strconv.ParseFloat(exprCollapsed[0], 64)
+		for k := 1; k < len(exprCollapsed); k += 2 {
+			operand, _ := strconv.ParseFloat(exprCollapsed[k+1], 64)
+			if exprCollapsed[k] == "+" {
+				exprReference += operand
+			} else {
+				exprReference -= operand
+			}
+		}
+
+		exprText := strings.Join(exprTerms, " ")
+		exprBuilt, buildErr := BuildExpressionTree(exprText)
+		assert(buildErr == nil, "random expression parses")
+		exprGot, _ := EvaluateExpression(exprBuilt)
+		assert(exprGot == exprReference, "matches the independent exprReference")
+
+		// postfix -> exprTree -> postfix must be a fixed point
+		exprAgain, _ := BuildFromPostfix(ToPostfix(exprBuilt))
+		againValue, _ := EvaluateExpression(exprAgain)
+		assert(againValue == exprGot, "postfix round-trip preserves the exprValue")
+		assert(fmt.Sprint(ToPostfix(exprAgain)) == fmt.Sprint(ToPostfix(exprBuilt)),
+			"postfix round-trip is a fixed point")
+
+		// and the fully-exprBracketed infix must re-parse to the same exprValue
+		exprReparsed, _ := BuildExpressionTree(ToInfix(exprBuilt))
+		reparsedValue, _ := EvaluateExpression(exprReparsed)
+		assert(reparsedValue == exprGot, "exprBracketed infix re-parses to the same exprValue")
 	}
 
 	fmt.Println("11-Trees (Go): all checks passed")

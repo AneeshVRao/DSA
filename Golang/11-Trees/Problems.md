@@ -28,6 +28,16 @@ Use Go's multiple return values to carry "the value the parent needs" and
 | Sum of Distances in Tree | Rerooting on a flattened tree. | [LeetCode 834](https://leetcode.com/problems/sum-of-distances-in-tree/) |
 | Create Sorted Array through Instructions | Subtree ranges plus a Fenwick tree. | [LeetCode 1649](https://leetcode.com/problems/create-sorted-array-through-instructions/) |
 
+## Expression trees
+| Problem | Hint | Link |
+|---------|------|------|
+| Evaluate Reverse Polish Notation | Postfix, one stack pass - the tree is optional. | [LeetCode 150](https://leetcode.com/problems/evaluate-reverse-polish-notation/) |
+| Basic Calculator II | Precedence without brackets; shunting-yard or a running term. | [LeetCode 227](https://leetcode.com/problems/basic-calculator-ii/) |
+| Basic Calculator | Now with brackets - the full shunting-yard. | [LeetCode 224](https://leetcode.com/problems/basic-calculator/) |
+| Build Binary Expression Tree From Infix Expression | Exactly this section. | [LeetCode 1597](https://leetcode.com/problems/build-binary-expression-tree-from-infix-expression/) |
+| Design an Expression Tree With Evaluate Function | Post-order fold. | [LeetCode 1628](https://leetcode.com/problems/design-an-expression-tree-with-evaluate-function/) |
+| Different Ways to Add Parentheses | Every possible tree shape, not just one. | [LeetCode 241](https://leetcode.com/problems/different-ways-to-add-parentheses/) |
+
 ## Self-check before moving on
 
 - [ ] I can write all four traversals recursively and iteratively.
@@ -38,3 +48,6 @@ Use Go's multiple return values to carry "the value the parent needs" and
 - [ ] I know the Euler tour has 2n-1 entries and why.
 - [ ] I can use tin/tout to test ancestry in O(1).
 - [ ] I know a subtree is a CONTIGUOUS timestamp range, and what that buys.
+- [ ] I know why postfix and prefix need no brackets but infix does.
+- [ ] I know the RIGHT operand pops first, and what breaks if it does not.
+- [ ] I know shunting-yard does not validate unless I make it.

@@ -454,6 +454,181 @@ export function eulerInOut(root) {
   return times;
 }
 
+// ============================================================================
+// Expression trees - an AST for arithmetic
+// ============================================================================
+const PRECEDENCE = { "+": 1, "-": 1, "*": 2, "/": 2 };
+
+/**
+ * A node in an expression tree: an operator with two children, or a leaf.
+ *
+ * An expression tree is the smallest interesting abstract syntax tree, and it
+ * makes the three traversals mean something concrete rather than academic:
+ *
+ *           *
+ *          / \             infix   (3 + 4) * 2     <- inorder
+ *         +   2            postfix  3 4 + 2 *      <- postorder
+ *        / \               prefix   * + 3 4 2      <- preorder
+ *       3   4
+ *
+ * The tree carries precedence and grouping in its SHAPE, so postfix and prefix
+ * need no brackets at all - the structure is unambiguous without them. Only
+ * infix needs parentheses, because it throws that information away.
+ *
+ * This is what a compiler front-end builds, and evaluating it is a post-order
+ * fold: children first, then combine.
+ */
+export class ExprNode {
+  constructor(value, left = null, right = null) {
+    this.value = value;
+    this.left = left;
+    this.right = right;
+  }
+
+  isOperator() {
+    return Object.hasOwn(PRECEDENCE, this.value);
+  }
+}
+
+/** Split on whitespace, brackets and operators. Multi-digit numbers survive. */
+export function tokenizeExpression(expression) {
+  return expression.match(/\d+\.?\d*|[-+*/()]/g) ?? [];
+}
+
+/**
+ * Shunting-yard: infix to postfix in one pass. O(n).
+ *
+ * Numbers go straight to the output. Operators wait on a stack until something
+ * of LOWER precedence arrives, at which point they are popped - which is
+ * exactly what makes `*` bind tighter than `+` with no lookahead or recursion.
+ *
+ * Left associativity is the `>=` in the pop condition: for `8 - 3 - 2` the
+ * first `-` is popped when the second arrives, giving `(8-3)-2 = 3` rather than
+ * `8-(3-2) = 7`. Changing it to `>` would silently make subtraction
+ * right-associative - a real bug, and an easy one to miss.
+ *
+ * Throws on malformed input. The bare algorithm does not validate at all - see
+ * the comment in the body.
+ */
+export function infixToPostfix(tokens) {
+  const output = [];
+  const operators = [];
+
+  // Shunting-yard on its own does NOT validate. Fed "+ 1 2" it happily emits
+  // "1 2 +" and reports success, silently reinterpreting prefix input as infix.
+  // Tracking what is expected next is what turns a garbled expression into an
+  // error instead of a plausible wrong answer.
+  let expectOperand = true;
+
+  for (const token of tokens) {
+    if (Object.hasOwn(PRECEDENCE, token)) {
+      if (expectOperand) throw new SyntaxError(`operator ${token} where an operand was expected`);
+      while (
+        operators.length &&
+        operators.at(-1) !== "(" &&
+        PRECEDENCE[operators.at(-1)] >= PRECEDENCE[token]
+      ) {
+        output.push(operators.pop()); // >= : LEFT associative
+      }
+      operators.push(token);
+      expectOperand = true;
+    } else if (token === "(") {
+      if (!expectOperand) throw new SyntaxError("'(' directly after an operand");
+      operators.push(token);
+    } else if (token === ")") {
+      if (expectOperand) throw new SyntaxError("')' where an operand was expected");
+      while (operators.length && operators.at(-1) !== "(") output.push(operators.pop());
+      if (!operators.length) throw new SyntaxError("unbalanced parentheses");
+      operators.pop(); // discard the "("
+      // A closed group behaves as a completed operand.
+    } else {
+      if (!expectOperand) throw new SyntaxError(`two operands in a row near ${token}`);
+      output.push(token); // a number
+      expectOperand = false;
+    }
+  }
+
+  if (expectOperand) throw new SyntaxError("expression ends with an operator");
+
+  while (operators.length) {
+    if (operators.at(-1) === "(") throw new SyntaxError("unbalanced parentheses");
+    output.push(operators.pop());
+  }
+  return output;
+}
+
+/**
+ * Build the tree from postfix in one stack pass. O(n).
+ *
+ * Postfix is the natural input: by the time an operator appears, both of its
+ * operands are already complete subtrees sitting on the stack.
+ *
+ * The RIGHT operand pops FIRST - it was pushed last. Getting that backwards
+ * still builds a valid-looking tree and still evaluates correctly for `+` and
+ * `*`; it silently reverses `-` and `/`. A test using only commutative
+ * operators would never catch it.
+ */
+export function buildFromPostfix(tokens) {
+  const stack = [];
+
+  for (const token of tokens) {
+    if (Object.hasOwn(PRECEDENCE, token)) {
+      if (stack.length < 2) throw new SyntaxError(`operator ${token} has too few operands`);
+      const right = stack.pop(); // RIGHT first
+      const left = stack.pop();
+      stack.push(new ExprNode(token, left, right));
+    } else {
+      stack.push(new ExprNode(token));
+    }
+  }
+
+  if (stack.length !== 1) throw new SyntaxError("malformed expression");
+  return stack[0];
+}
+
+/** Infix string to expression tree: tokenize, shunting-yard, then build. */
+export function buildExpressionTree(expression) {
+  return buildFromPostfix(infixToPostfix(tokenizeExpression(expression)));
+}
+
+/** Evaluate bottom-up. O(n) - a post-order fold. */
+export function evaluateExpression(node) {
+  if (!node.isOperator()) return Number(node.value);
+
+  const left = evaluateExpression(node.left);
+  const right = evaluateExpression(node.right);
+
+  if (node.value === "+") return left + right;
+  if (node.value === "-") return left - right;
+  if (node.value === "*") return left * right;
+  // JS would return Infinity rather than throwing - surface it explicitly.
+  if (right === 0) throw new RangeError("division by zero in expression");
+  return left / right;
+}
+
+/** PREorder: operator, left, right. No brackets needed - unambiguous. */
+export function toPrefix(node) {
+  if (!node.isOperator()) return [node.value];
+  return [node.value, ...toPrefix(node.left), ...toPrefix(node.right)];
+}
+
+/** POSTorder: left, right, operator. What a stack machine executes. */
+export function toPostfix(node) {
+  if (!node.isOperator()) return [node.value];
+  return [...toPostfix(node.left), ...toPostfix(node.right), node.value];
+}
+
+/**
+ * INorder, fully parenthesised.
+ *
+ * Every operator gets brackets. Emitting infix without them would lose the
+ * grouping the tree encodes - `* + 3 4 2` is unambiguous, `3 + 4 * 2` is not.
+ */
+export function toInfix(node) {
+  if (!node.isOperator()) return node.value;
+  return `(${toInfix(node.left)} ${node.value} ${toInfix(node.right)})`;
+}
+
 function demo() {
   //         1
   //       /   \
@@ -593,6 +768,92 @@ function demo() {
     };
     check(root);
   }
+  // --- Expression trees -------------------------------------------------------
+  {
+    const tree = buildExpressionTree("3 + 4 * 2");
+    assert.equal(evaluateExpression(tree), 11); // * binds tighter than +
+    assert.deepEqual(toPostfix(tree), ["3", "4", "2", "*", "+"]);
+    assert.deepEqual(toPrefix(tree), ["+", "3", "*", "4", "2"]);
+    assert.equal(toInfix(tree), "(3 + (4 * 2))");
+
+    const bracketed = buildExpressionTree("(3 + 4) * 2");
+    assert.equal(evaluateExpression(bracketed), 14); // brackets override it
+    assert.deepEqual(toPostfix(bracketed), ["3", "4", "+", "2", "*"]);
+    assert.deepEqual(toPrefix(bracketed), ["*", "+", "3", "4", "2"]);
+
+    // Left associativity and operand order. Both are silent when wrong: right
+    // for + and *, WRONG for - and /.
+    for (const [text, expected] of [
+      ["8 - 3 - 2", 3], // not 7
+      ["16 / 4 / 2", 2], // not 8
+      ["8 - 3", 5], // not -5
+      ["42", 42], // a lone leaf
+      ["2 * (3 + 4) - 5", 9],
+    ]) {
+      assert.equal(evaluateExpression(buildExpressionTree(text)), expected);
+    }
+
+    // Malformed input is rejected, not silently mis-parsed.
+    for (const bad of ["(1 + 2", "1 + 2)", "1 +", "+ 1 2", "1 2"]) {
+      assert.throws(() => buildExpressionTree(bad), SyntaxError);
+    }
+    assert.throws(() => evaluateExpression(buildExpressionTree("1 / 0")), RangeError);
+
+    // Against an INDEPENDENT reference on random expressions: collapse every
+    // `*` first, then add and subtract what is left. That directly encodes
+    // "* binds tighter than +", so it tests precedence against a different
+    // implementation rather than against itself. (Deliberately not eval() - it
+    // is the wrong habit to demonstrate, and this is a stronger check anyway.)
+    const referenceValue = (terms) => {
+      const collapsed = [terms[0]];
+      for (let i = 1; i < terms.length; i += 2) {
+        if (terms[i] === "*") {
+          collapsed[collapsed.length - 1] = String(
+            Number(collapsed.at(-1)) * Number(terms[i + 1]),
+          );
+        } else {
+          collapsed.push(terms[i], terms[i + 1]);
+        }
+      }
+      let total = Number(collapsed[0]);
+      for (let i = 1; i < collapsed.length; i += 2) {
+        const value = Number(collapsed[i + 1]);
+        total = collapsed[i] === "+" ? total + value : total - value;
+      }
+      return total;
+    };
+
+    let exprSeed = 11;
+    const exprRandom = () => {
+      exprSeed = (exprSeed * 1103515245 + 12345) & 0x7fffffff;
+      return exprSeed / 0x7fffffff;
+    };
+
+    for (let trial = 0; trial < 200; trial++) {
+      const terms = [String(1 + Math.floor(exprRandom() * 9))];
+      const extra = 1 + Math.floor(exprRandom() * 5);
+      for (let k = 0; k < extra; k++) {
+        terms.push("+-*"[Math.floor(exprRandom() * 3)]);
+        terms.push(String(1 + Math.floor(exprRandom() * 9)));
+      }
+      const text = terms.join(" ");
+
+      const built = buildExpressionTree(text);
+      assert.equal(evaluateExpression(built), referenceValue(terms));
+
+      // postfix -> tree -> postfix must be a fixed point
+      const again = buildFromPostfix(toPostfix(built));
+      assert.equal(evaluateExpression(again), evaluateExpression(built));
+      assert.deepEqual(toPostfix(again), toPostfix(built));
+
+      // and the fully-bracketed infix must re-parse to the same value
+      assert.equal(
+        evaluateExpression(buildExpressionTree(toInfix(built))),
+        evaluateExpression(built),
+      );
+    }
+  }
+
 
 
   console.log("11-Trees (JavaScript): all checks passed");

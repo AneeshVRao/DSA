@@ -7,13 +7,16 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 using namespace std;
@@ -539,6 +542,234 @@ int subsetSumPartitionMinDifference(const vector<int>& nums) {
     return best;
 }
 
+// ============================================================================
+// 9. Digit DP - counting numbers, not iterating them
+// ============================================================================
+
+// How many x in [0, limit] have a digit sum <= maxDigitSum.
+// O(digits * sum * 2).
+//
+// The tell for digit DP: the ANSWER IS A COUNT OVER A RANGE, and the range is
+// far too large to iterate - `limit` can be 10^18. So build the numbers one
+// digit at a time and count the branches instead of walking them.
+//
+// THE STATE:
+//
+//     pos    which digit position is being filled, left to right
+//     tight  are we still exactly on the prefix of `limit`?
+//     total  digit sum accumulated so far
+//
+// THE `tight` FLAG IS THE WHOLE TECHNIQUE. While every digit so far has matched
+// `limit` exactly, the next digit is capped at limit[pos]. The moment one
+// smaller digit is placed, the prefix is already below `limit` and every later
+// digit is free to be 0-9 - and that subtree is shared by an enormous number of
+// values, which is what makes memoisation pay.
+//
+// Without `tight` there is nothing to memoise: the answer would depend on the
+// entire prefix. With it, the prefix collapses to a single bit.
+//
+// Leading zeros need no special handling here because a leading zero adds 0 to
+// the digit sum. Constraints on the DIGITS THEMSELVES do need a third flag -
+// see countWithoutDigit below.
+long long countWithDigitSumAtMost(long long limit, int maxDigitSum) {
+    if (limit < 0) return 0;
+
+    string digits = to_string(limit);
+    int n = int(digits.size());
+
+    // memo[pos][tight][total], -1 = not yet computed.
+    vector<vector<vector<long long>>> memo(
+        size_t(n), vector<vector<long long>>(2, vector<long long>(size_t(maxDigitSum) + 1, -1)));
+
+    function<long long(int, bool, int)> go = [&](int pos, bool tight, int total) -> long long {
+        if (total > maxDigitSum) return 0;         // prune: sums only ever grow
+        if (pos == n) return 1;                    // a complete, valid number
+
+        long long& cached = memo[size_t(pos)][tight ? 1 : 0][size_t(total)];
+        if (cached != -1) return cached;
+
+        // Capped by limit's digit only while still on its prefix.
+        int highest = tight ? digits[size_t(pos)] - '0' : 9;
+        long long count = 0;
+        for (int digit = 0; digit <= highest; digit++) {
+            count += go(pos + 1, tight && digit == highest, total + digit);
+        }
+        return cached = count;
+    };
+
+    return go(0, true, 0);
+}
+
+// The same count over [low, high]. The standard prefix-subtraction trick.
+//
+//     f(low, high) = f(0, high) - f(0, low - 1)
+//
+// Digit DP naturally counts from 0, so a two-sided range is two one-sided
+// calls. The `low - 1` is the part people get wrong - using `low` drops a value
+// that should be counted.
+long long countInRangeWithDigitSum(long long low, long long high, int maxDigitSum) {
+    if (low > high) return 0;
+    return countWithDigitSumAtMost(high, maxDigitSum) -
+           countWithDigitSumAtMost(low - 1, maxDigitSum);
+}
+
+// How many x in [0, limit] contain no occurrence of `forbidden`. O(digits).
+//
+// The same `tight` skeleton - but this constraint needs a THIRD state bit, and
+// the reason is the classic digit-DP trap.
+//
+// LEADING ZEROS ARE NOT DIGITS. Every candidate is built to the full width of
+// `limit`, so 7 is constructed as "007" when limit has three digits. The
+// digit-sum version above does not care, because those zeros add 0 to the sum.
+// Here they are fatal: with `forbidden == 0` the padding alone would reject
+// every short number, and countWithoutDigit(50, 0) would return 36 rather
+// than 45.
+//
+// So carry `started` - has a significant digit been placed yet? A zero before
+// the number has started is padding and exempt; once started, every digit is
+// real and the filter applies.
+//
+// The base case needs care too: if nothing ever started, the value IS zero,
+// written "0" - so it survives only when 0 is not the forbidden digit.
+long long countWithoutDigit(long long limit, int forbidden) {
+    if (limit < 0) return 0;
+
+    string digits = to_string(limit);
+    int n = int(digits.size());
+    vector<vector<vector<long long>>> memo(
+        size_t(n), vector<vector<long long>>(2, vector<long long>(2, -1)));
+
+    function<long long(int, bool, bool)> go = [&](int pos, bool tight, bool started) -> long long {
+        if (pos == n) {
+            if (started) return 1;
+            // Nothing was ever placed: the value is 0, written "0".
+            return forbidden == 0 ? 0 : 1;
+        }
+
+        long long& cached = memo[size_t(pos)][tight ? 1 : 0][started ? 1 : 0];
+        if (cached != -1) return cached;
+
+        int highest = tight ? digits[size_t(pos)] - '0' : 9;
+        long long count = 0;
+        for (int digit = 0; digit <= highest; digit++) {
+            bool nowStarted = started || digit != 0;
+            if (nowStarted && digit == forbidden) continue;   // a REAL banned digit
+            count += go(pos + 1, tight && digit == highest, nowStarted);
+        }
+        return cached = count;
+    };
+
+    return go(0, true, false);
+}
+
+// ============================================================================
+// 10. Game theory DP - minimax, memoisation and alpha-beta
+// ============================================================================
+
+// First player's final margin when both play optimally. O(n^2).
+//
+// Two players alternately take a stone from EITHER END of the row. Both play
+// perfectly. What is (my total - their total) at the end?
+//
+// THE TRICK THAT COLLAPSES IT. Do not track two scores and whose turn it is.
+// Track a single number - the MARGIN from the perspective of whoever is about
+// to move:
+//
+//     best[i][j] = the best achievable (my points - their points) on [i, j]
+//
+// Taking values[i] scores values[i] and then hands the opponent a position
+// worth best[i+1][j] *to them*, which counts against me:
+//
+//     best[i][j] = max(values[i] - best[i+1][j],
+//                      values[j] - best[i][j-1])
+//
+// That single minus sign is the whole of minimax. There is no separate
+// "minimising player" branch, because the opponent's best margin is exactly the
+// negative of mine - the game is zero-sum, and this is the NEGAMAX form.
+//
+// O(n^2) states, O(1) each. The naive tree is O(2^n).
+long long stoneGameMargin(const vector<int>& values) {
+    size_t n = values.size();
+    if (n == 0) return 0;
+
+    vector<vector<long long>> best(n, vector<long long>(n, 0));
+    for (size_t i = 0; i < n; i++) best[i][i] = values[i];
+
+    for (size_t length = 2; length <= n; length++) {   // INCREASING LENGTH
+        for (size_t i = 0; i + length <= n; i++) {
+            size_t j = i + length - 1;
+            best[i][j] = max(values[i] - best[i + 1][j],
+                             values[j] - best[i][j - 1]);
+        }
+    }
+    return best[0][n - 1];
+}
+
+// The same answer by explicit tree search. Returns (margin, nodes visited).
+//
+// Written as an actual search rather than a table, because that is the form
+// alpha-beta applies to - and the node counter is what makes the pruning
+// measurable instead of merely claimed.
+//
+// ALPHA-BETA. Carry two bounds down the tree:
+//
+//     alpha  the best margin the side to move can already guarantee here
+//     beta   the most the parent will ever allow this node to be worth
+//
+// If alpha >= beta, the parent already has a better option elsewhere and will
+// never choose this branch, so the rest of it need not be examined. The exact
+// value is irrelevant once it is known to be too good to be allowed, which is
+// why the cutoff is safe and the answer unchanged.
+//
+// THE WINDOW HAS TO BE SHIFTED, NOT JUST NEGATED. The textbook negamax line is
+// `-search(child, -beta, -alpha)`, correct only when a node's value is exactly
+// the negation of its child's. Here it is
+//
+//     value = face - child          (face = the stone just taken)
+//
+// so the window must be transformed through that expression too. Solving
+// `alpha < face - child < beta` for the child gives
+//
+//     child window = (face - beta, face - alpha)
+//
+// and `face` differs per branch, so each child gets its own window. Passing the
+// plain (-beta, -alpha) prunes branches that were still live and silently
+// returns a wrong margin on some inputs - visible only when the pruned search
+// is compared against the unpruned one, which is what the demo does.
+pair<long long, long long> minimaxExplicit(const vector<int>& values, bool useAlphaBeta) {
+    long long nodes = 0;
+    const long long INF_MARGIN = 1000000000LL;
+
+    function<long long(int, int, long long, long long)> search =
+        [&](int i, int j, long long alpha, long long beta) -> long long {
+            nodes++;
+            if (i > j) return 0;
+
+            long long bestMargin = -INF_MARGIN;
+            for (int takeLeft = 1; takeLeft >= 0; takeLeft--) {
+                // The stone taken on this branch, and the range left behind.
+                long long face = takeLeft ? values[size_t(i)] : values[size_t(j)];
+                int lo = takeLeft ? i + 1 : i;
+                int hi = takeLeft ? j : j - 1;
+
+                // Window shifted through `face - child` - see above.
+                long long child = search(lo, hi, face - beta, face - alpha);
+                long long gain = face - child;
+
+                bestMargin = max(bestMargin, gain);
+                alpha = max(alpha, bestMargin);
+                if (useAlphaBeta && alpha >= beta) break;   // cutoff
+            }
+            return bestMargin;
+        };
+
+    long long margin = search(0, int(values.size()) - 1, -INF_MARGIN, INF_MARGIN);
+    return {margin, nodes};
+}
+
+// Does the first player win outright? A margin above zero says yes.
+bool canFirstPlayerWin(const vector<int>& values) { return stoneGameMargin(values) > 0; }
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -764,6 +995,111 @@ int main() {
         }
         assert(subsetSumPartitionMinDifference(nums) == bestDiff);
     }
+    // --- Digit DP -------------------------------------------------------------
+    assert(countWithDigitSumAtMost(0, 0) == 1);          // just 0 itself
+    assert(countWithDigitSumAtMost(9, 5) == 6);          // 0,1,2,3,4,5
+    assert(countWithDigitSumAtMost(20, 2) == 6);         // 0,1,2,10,11,20
+    assert(countWithDigitSumAtMost(-1, 5) == 0);         // empty range
+    assert(countWithDigitSumAtMost(100, 100) == 101);    // every value fits
+
+    // Against brute force over the whole range.
+    for (int limit = 0; limit < 400; limit++) {
+        for (int cap : {0, 1, 5, 9, 15}) {
+            long long expected = 0;
+            for (int x = 0; x <= limit; x++) {
+                int sum = 0;
+                for (int v = x; v > 0; v /= 10) sum += v % 10;
+                if (sum <= cap) expected++;
+            }
+            assert(countWithDigitSumAtMost(limit, cap) == expected);
+        }
+    }
+
+    assert(countInRangeWithDigitSum(10, 20, 2) == 3);    // 10, 11, 20
+    assert(countInRangeWithDigitSum(5, 5, 5) == 1);      // inclusive both ends
+    assert(countInRangeWithDigitSum(20, 10, 5) == 0);    // inverted
+
+    assert(countWithoutDigit(9, 4) == 9);                // 0-9 minus the 4
+    assert(countWithoutDigit(50, 0) == 45);              // the leading-zero trap
+    for (int limit = 0; limit < 500; limit++) {
+        for (int forbidden : {0, 4, 7}) {
+            long long expected = 0;
+            for (int x = 0; x <= limit; x++) {
+                if (to_string(x).find(char('0' + forbidden)) == string::npos) expected++;
+            }
+            assert(countWithoutDigit(limit, forbidden) == expected);
+        }
+    }
+
+    // The point of the whole technique: a range no loop could ever walk.
+    assert(countWithDigitSumAtMost(1000000000000000000LL, 20) > 0);   // instant
+
+    // --- Game theory DP -------------------------------------------------------
+    assert(stoneGameMargin({1, 5, 2}) == -2);      // every move loses ground
+    assert(stoneGameMargin({5, 3, 4, 5}) == 1);
+    assert(stoneGameMargin({10}) == 10);           // take the only stone
+    assert(stoneGameMargin({}) == 0);
+    assert(stoneGameMargin({2, 2}) == 0);          // symmetric: a draw
+
+    assert(canFirstPlayerWin({5, 3, 4, 5}));
+    assert(!canFirstPlayerWin({1, 5, 2}));
+
+    {
+        mt19937 gameRng(13);
+        int strictlyFewer = 0, trials = 0;
+        for (int t = 0; t < 60; t++) {
+            int n = int(gameRng() % 9) + 4;
+            vector<int> stones(static_cast<size_t>(n));
+            for (int& s : stones) s = int(gameRng() % 20) + 1;
+
+            long long table = stoneGameMargin(stones);
+            auto [plain, plainNodes] = minimaxExplicit(stones, false);
+            auto [pruned, prunedNodes] = minimaxExplicit(stones, true);
+
+            assert(plain == table);                // search agrees with the DP
+            assert(pruned == table);               // pruning changes NOTHING
+
+            // Pruning can never COST nodes - that part is a guarantee.
+            assert(prunedNodes <= plainNodes);
+            trials++;
+            strictlyFewer += prunedNodes < plainNodes;
+        }
+        // How much it saves is input-dependent, so the claim is statistical:
+        // on a two-branch game with fixed move ordering there are positions
+        // where nothing can be cut. It should still win almost always.
+        assert(strictlyFewer >= 0.9 * trials);
+
+        // Brute force over every play sequence, for small inputs.
+        function<long long(const vector<int>&, size_t, size_t)> bruteMargin =
+            [&](const vector<int>& v, size_t i, size_t j) -> long long {
+                if (i > j || j == size_t(-1)) return 0;
+                long long takeLeft = v[i] - (i + 1 > j ? 0 : bruteMargin(v, i + 1, j));
+                long long takeRight = v[j] - (i > j - 1 || j == 0 ? 0 : bruteMargin(v, i, j - 1));
+                return max(takeLeft, takeRight);
+            };
+        for (int t = 0; t < 40; t++) {
+            int n = int(gameRng() % 9) + 1;
+            vector<int> stones(static_cast<size_t>(n));
+            for (int& s : stones) s = int(gameRng() % 9) + 1;
+            assert(stoneGameMargin(stones) == bruteMargin(stones, 0, size_t(n) - 1));
+        }
+
+        // A deterministic case large enough that pruning definitely bites.
+        vector<int> ordered(16);
+        iota(ordered.begin(), ordered.end(), 1);
+        auto [_unused, unprunedNodes] = minimaxExplicit(ordered, false);
+        auto [_unused2, alphaBetaNodes] = minimaxExplicit(ordered, true);
+        (void)_unused;
+        (void)_unused2;
+        assert(alphaBetaNodes < unprunedNodes);
+        // n levels of choices plus the empty-range leaves: 2^(n+1) - 1 nodes.
+        assert(unprunedNodes == (1LL << (ordered.size() + 1)) - 1);
+
+        printf("  minimax visited %lld nodes, alpha-beta %lld (%lld%% pruned)\n",
+               unprunedNodes, alphaBetaNodes,
+               100 - 100 * alphaBetaNodes / unprunedNodes);
+    }
+
 
     cout << "15-Dynamic-Programming (C++): all checks passed\n";
     cout << "  Interval DP checked against every parenthesisation and burst order,\n";

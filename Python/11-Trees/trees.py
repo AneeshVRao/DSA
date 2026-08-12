@@ -8,6 +8,7 @@ Run:  python trees.py
 from __future__ import annotations
 
 import random
+import re
 from collections import deque
 from typing import Optional, Sequence
 
@@ -486,6 +487,206 @@ def euler_in_out(root: Optional[TreeNode]) -> dict[int, tuple[int, int]]:
 
 
 # ============================================================================
+# Expression trees - an AST for arithmetic
+# ============================================================================
+PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
+
+
+class ExprNode:
+    r"""A node in an expression tree: an operator with two children, or a leaf.
+
+    An expression tree is the smallest interesting abstract syntax tree, and it
+    makes the three traversals mean something concrete rather than academic:
+
+              *
+             / \           infix   (3 + 4) * 2     <- inorder
+            +   2          postfix  3 4 + 2 *      <- postorder
+           / \             prefix   * + 3 4 2      <- preorder
+          3   4
+
+    The tree carries the precedence and grouping in its SHAPE, so postfix and
+    prefix need no brackets at all - the structure is unambiguous without them.
+    Only infix needs parentheses, because it throws that information away.
+
+    This is exactly what a compiler front-end builds, and evaluating it is a
+    post-order fold: children first, then combine.
+    """
+
+    __slots__ = ("value", "left", "right")
+
+    def __init__(self, value: str,
+                 left: Optional["ExprNode"] = None,
+                 right: Optional["ExprNode"] = None) -> None:
+        self.value = value
+        self.left = left
+        self.right = right
+
+    def is_operator(self) -> bool:
+        return self.value in PRECEDENCE
+
+    def __repr__(self) -> str:
+        return f"ExprNode({self.value!r})"
+
+
+def tokenize(expression: str) -> list[str]:
+    """Split on whitespace, brackets and operators. Multi-digit numbers survive."""
+    return re.findall(r"\d+\.?\d*|[-+*/()]", expression)
+
+
+def infix_to_postfix(tokens: list[str]) -> list[str]:
+    """Shunting-yard: infix to postfix in one pass. O(n).
+
+    Numbers go straight to the output. Operators wait on a stack until
+    something of LOWER precedence arrives, at which point they are popped -
+    which is precisely what makes `*` bind tighter than `+` without any
+    lookahead or recursion.
+
+    Left associativity is the `>=` in the pop condition: for `8 - 3 - 2`, the
+    first `-` is popped when the second arrives, giving `(8-3)-2 = 3` rather
+    than `8-(3-2) = 7`. Changing it to `>` would silently make subtraction
+    right-associative - a real bug, and an easy one to miss.
+
+    Raises ValueError on malformed input. The bare algorithm does not validate
+    at all - see the comment in the body.
+    """
+    output: list[str] = []
+    operators: list[str] = []
+
+    # Shunting-yard on its own does NOT validate. Fed "+ 1 2" it happily emits
+    # "1 2 +" and reports success, silently reinterpreting prefix input as
+    # infix. Tracking what is expected next is what turns a garbled expression
+    # into an error instead of a plausible wrong answer.
+    expect_operand = True
+
+    for token in tokens:
+        if token in PRECEDENCE:
+            if expect_operand:
+                raise ValueError(f"operator {token!r} where an operand was expected")
+            while (operators and operators[-1] != "("
+                   and PRECEDENCE[operators[-1]] >= PRECEDENCE[token]):
+                output.append(operators.pop())      # >= : LEFT associative
+            operators.append(token)
+            expect_operand = True
+
+        elif token == "(":
+            if not expect_operand:
+                raise ValueError("'(' directly after an operand")
+            operators.append(token)
+
+        elif token == ")":
+            if expect_operand:
+                raise ValueError("')' where an operand was expected")
+            while operators and operators[-1] != "(":
+                output.append(operators.pop())
+            if not operators:
+                raise ValueError("unbalanced parentheses")
+            operators.pop()                          # discard the "("
+            # A closed group behaves as a completed operand.
+
+        else:
+            if not expect_operand:
+                raise ValueError(f"two operands in a row near {token!r}")
+            output.append(token)                     # a number
+            expect_operand = False
+
+    if expect_operand:
+        raise ValueError("expression ends with an operator")
+
+    while operators:
+        if operators[-1] == "(":
+            raise ValueError("unbalanced parentheses")
+        output.append(operators.pop())
+    return output
+
+
+def build_from_postfix(tokens: list[str]) -> ExprNode:
+    """Build the tree from postfix in one stack pass. O(n).
+
+    Postfix is the natural input: by the time an operator appears, both of its
+    operands are already complete subtrees sitting on the stack.
+
+    The RIGHT operand pops FIRST - it was pushed last. Getting that backwards
+    still produces a valid-looking tree, and still evaluates correctly for `+`
+    and `*`; it silently reverses `-` and `/`. A test with only commutative
+    operators would never catch it, which is why the demo below checks `8 - 3`.
+    """
+    stack: list[ExprNode] = []
+
+    for token in tokens:
+        if token in PRECEDENCE:
+            if len(stack) < 2:
+                raise ValueError(f"operator {token!r} has too few operands")
+            right = stack.pop()                      # RIGHT first
+            left = stack.pop()
+            stack.append(ExprNode(token, left, right))
+        else:
+            stack.append(ExprNode(token))
+
+    if len(stack) != 1:
+        raise ValueError("malformed expression")
+    return stack[0]
+
+
+def build_expression_tree(expression: str) -> ExprNode:
+    """Infix string to expression tree: tokenize, shunting-yard, then build."""
+    return build_from_postfix(infix_to_postfix(tokenize(expression)))
+
+
+def evaluate_expression(node: ExprNode) -> float:
+    """Evaluate bottom-up. O(n) - a post-order fold.
+
+    Children first, then combine: the same shape as every other bottom-up tree
+    computation in this chapter.
+    """
+    if not node.is_operator():
+        return float(node.value)
+
+    assert node.left is not None and node.right is not None
+    left = evaluate_expression(node.left)
+    right = evaluate_expression(node.right)
+
+    if node.value == "+":
+        return left + right
+    if node.value == "-":
+        return left - right
+    if node.value == "*":
+        return left * right
+    if right == 0:
+        raise ZeroDivisionError("division by zero in expression")
+    return left / right
+
+
+def to_prefix(node: ExprNode) -> list[str]:
+    """PREorder: operator, left, right. No brackets needed - unambiguous."""
+    if not node.is_operator():
+        return [node.value]
+    assert node.left is not None and node.right is not None
+    return [node.value] + to_prefix(node.left) + to_prefix(node.right)
+
+
+def to_postfix(node: ExprNode) -> list[str]:
+    """POSTorder: left, right, operator. What a stack machine executes."""
+    if not node.is_operator():
+        return [node.value]
+    assert node.left is not None and node.right is not None
+    return to_postfix(node.left) + to_postfix(node.right) + [node.value]
+
+
+def to_infix(node: ExprNode) -> str:
+    """INorder, fully parenthesised.
+
+    Every operator gets brackets. Emitting infix without them would lose the
+    grouping the tree encodes - `* + 3 4 2` is unambiguous, `3 + 4 * 2` is not.
+    Minimal-bracket output means comparing each node's precedence against its
+    parent's, which is a nice exercise but not the point here.
+    """
+    if not node.is_operator():
+        return node.value
+    assert node.left is not None and node.right is not None
+    return f"({to_infix(node.left)} {node.value} {to_infix(node.right)})"
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -623,6 +824,87 @@ def demo() -> None:
             check(node.right)
 
         check(root)
+
+    # --- Expression trees ----------------------------------------------------
+    tree = build_expression_tree("3 + 4 * 2")
+    assert evaluate_expression(tree) == 11.0          # * binds tighter than +
+    assert to_postfix(tree) == ["3", "4", "2", "*", "+"]
+    assert to_prefix(tree) == ["+", "3", "*", "4", "2"]
+    assert to_infix(tree) == "(3 + (4 * 2))"
+
+    bracketed = build_expression_tree("(3 + 4) * 2")
+    assert evaluate_expression(bracketed) == 14.0     # brackets override it
+    assert to_postfix(bracketed) == ["3", "4", "+", "2", "*"]
+    assert to_prefix(bracketed) == ["*", "+", "3", "4", "2"]
+
+    # Left associativity, and operand order. Both are silent when wrong: they
+    # give the right answer for + and *, and the WRONG one for - and /.
+    assert evaluate_expression(build_expression_tree("8 - 3 - 2")) == 3.0   # not 7
+    assert evaluate_expression(build_expression_tree("16 / 4 / 2")) == 2.0  # not 8
+    assert evaluate_expression(build_expression_tree("8 - 3")) == 5.0       # not -5
+
+    assert evaluate_expression(build_expression_tree("42")) == 42.0         # a leaf
+    assert evaluate_expression(build_expression_tree("2 * (3 + 4) - 5")) == 9.0
+    assert to_postfix(build_expression_tree("1 + 2 + 3")) == \
+        ["1", "2", "+", "3", "+"]
+
+    # Malformed input is rejected rather than silently mis-parsed.
+    for bad in ("(1 + 2", "1 + 2)", "1 +", "+ 1 2"):
+        try:
+            build_expression_tree(bad)
+            raise AssertionError(f"expected {bad!r} to be rejected")
+        except ValueError:
+            pass
+
+    try:
+        evaluate_expression(build_expression_tree("1 / 0"))
+        raise AssertionError("expected ZeroDivisionError")
+    except ZeroDivisionError:
+        pass
+
+    # Against an INDEPENDENT reference on random expressions. Two passes:
+    # collapse every `*` first, then add and subtract what is left. That
+    # directly encodes "* binds tighter than +", so it tests the parser's
+    # precedence against a different implementation rather than against itself.
+    # (Deliberately not eval() - it is the wrong habit to demonstrate, and a
+    # hand-written reference is a stronger check anyway.)
+    def reference_value(terms: list[str]) -> float:
+        collapsed: list[str] = [terms[0]]
+        i = 1
+        while i < len(terms):
+            operator, operand = terms[i], terms[i + 1]
+            if operator == "*":
+                collapsed[-1] = str(float(collapsed[-1]) * float(operand))
+            else:
+                collapsed.append(operator)
+                collapsed.append(operand)
+            i += 2
+
+        total = float(collapsed[0])
+        for j in range(1, len(collapsed), 2):
+            value = float(collapsed[j + 1])
+            total = total + value if collapsed[j] == "+" else total - value
+        return total
+
+    random.seed(11)
+    for _ in range(200):
+        terms = [str(random.randint(1, 9))]
+        for _ in range(random.randint(1, 5)):
+            terms.append(random.choice(["+", "-", "*"]))
+            terms.append(str(random.randint(1, 9)))
+        text = " ".join(terms)
+
+        built = build_expression_tree(text)
+        assert evaluate_expression(built) == reference_value(terms)
+
+        # postfix -> tree -> postfix must be a fixed point
+        again = build_from_postfix(to_postfix(built))
+        assert evaluate_expression(again) == evaluate_expression(built)
+        assert to_postfix(again) == to_postfix(built)
+
+        # and the fully-bracketed infix must re-parse to the same value
+        assert evaluate_expression(build_expression_tree(to_infix(built))) \
+            == evaluate_expression(built)
 
     print("11-Trees (Python): all checks passed")
 

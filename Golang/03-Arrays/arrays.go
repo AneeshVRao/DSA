@@ -6,7 +6,9 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
+	"time"
 )
 
 // ============================================================================
@@ -374,6 +376,84 @@ func MergeSorted(a, b []int) []int {
 // demo
 // ============================================================================
 
+// ============================================================================
+// Memory layout: why the same loop has two speeds
+// ============================================================================
+
+// SumRowMajor walks the grid the way it is stored: row by row.
+//
+// Memory is a flat line, and a 2-D grid has to be flattened onto it somehow.
+// ROW-MAJOR order (C, C++, Java, Go, Python) stores row 0, then row 1, and so
+// on. Column-major (Fortran, MATLAB, R) does the opposite.
+//
+// The CPU never fetches one value. It fetches a CACHE LINE - 64 bytes on x86,
+// so 8 int64s. Walking along a row means every fetch delivers the next seven
+// iterations for free: one miss, then seven hits.
+func SumRowMajor(flat []int, rows, cols int) int {
+	total := 0
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			total += flat[r*cols+c]
+		}
+	}
+	return total
+}
+
+// SumColumnMajor walks ACROSS the storage order: column by column.
+//
+// Identical arithmetic, identical result, two lines swapped - and several times
+// slower on the same data.
+//
+// Each step jumps a whole row ahead in memory. Once a row exceeds a cache line
+// (it usually does), every access is a fresh miss, and the 64 bytes fetched are
+// evicted before the other values are ever used. The memory bandwidth spent is
+// the same; the useful fraction of it is not.
+//
+// This is the gap between an algorithm's COMPLEXITY - both loops are
+// O(rows * cols), identically - and its CONSTANT FACTOR. Big-O deliberately
+// ignores what the hardware is doing, which is why it is necessary but never
+// sufficient.
+func SumColumnMajor(flat []int, rows, cols int) int {
+	total := 0
+	for c := 0; c < cols; c++ {
+		for r := 0; r < rows; r++ {
+			total += flat[r*cols+c]
+		}
+	}
+	return total
+}
+
+// AliasedGrid is the classic broken 2-D initialisation. DO NOT use this.
+//
+// One backing row is allocated and the SAME slice header is copied into every
+// outer slot. A slice header points at shared backing memory, so writing to
+// grid[0][0] writes to every row at once.
+//
+// It is silent: the shape is right, the values start right, and it only goes
+// wrong on the first write. Kept here purely so the demo can prove it.
+func AliasedGrid(rows, cols int) [][]int {
+	row := make([]int, cols)
+	grid := make([][]int, rows)
+	for i := range grid {
+		grid[i] = row // every row shares ONE backing array
+	}
+	return grid
+}
+
+// IndependentGrid is the correct version: a fresh allocation per row.
+//
+// For a genuinely rectangular grid, prefer ONE flat slice plus index
+// arithmetic (flat[r*cols+c]). A [][]int is a slice of slice HEADERS, each
+// pointing at a separate allocation, so the rows are scattered and every access
+// costs an extra indirection.
+func IndependentGrid(rows, cols int) [][]int {
+	grid := make([][]int, rows)
+	for i := range grid {
+		grid[i] = make([]int, cols) // a NEW backing array per row
+	}
+	return grid
+}
+
 func assert(cond bool, msg string) {
 	if !cond {
 		panic("assertion failed: " + msg)
@@ -490,6 +570,59 @@ func main() {
 	}
 
 	assert(NewPrefixSum2D(nil).RangeSum(0, 0, 0, 0) == 0, "no rows at all")
+	// --- Memory layout -------------------------------------------------------
+	// The aliasing trap, demonstrated rather than described.
+	broken := AliasedGrid(3, 3)
+	broken[0][0] = 9
+	assert(broken[1][0] == 9 && broken[2][0] == 9, "all three rows changed at once")
+	assert(&broken[0][0] == &broken[1][0], "because they share one backing array")
+
+	fine := IndependentGrid(3, 3)
+	fine[0][0] = 9
+	assert(fine[1][0] == 0 && fine[2][0] == 0, "only the one cell moved")
+	assert(&fine[0][0] != &fine[1][0], "separate allocations")
+
+	// Row-major vs column-major: same complexity, same answer, different speed.
+	const side = 3000
+	flat := make([]int, side*side)
+	for r := 0; r < side; r++ {
+		for c := 0; c < side; c++ {
+			flat[r*side+c] = r + c
+		}
+	}
+
+	timeBestOf := func(fn func() int) float64 {
+		best := math.Inf(1)
+		for i := 0; i < 3; i++ { // minimum: timing noise only ever adds
+			start := time.Now()
+			sink := fn()
+			_ = sink
+			best = math.Min(best, float64(time.Since(start).Nanoseconds())/1e6)
+		}
+		return best
+	}
+
+	rowMs := timeBestOf(func() int { return SumRowMajor(flat, side, side) })
+	colMs := timeBestOf(func() int { return SumColumnMajor(flat, side, side) })
+
+	// The part that is a FACT: both orders compute the same sum.
+	expectedSum := 0
+	for r := 0; r < side; r++ {
+		for c := 0; c < side; c++ {
+			expectedSum += r + c
+		}
+	}
+	assert(SumRowMajor(flat, side, side) == expectedSum, "row-major sum")
+	assert(SumColumnMajor(flat, side, side) == expectedSum, "column-major sum")
+
+	// The part that is a MEASUREMENT: row-major is normally several times
+	// faster. The assertion is deliberately loose - a busy machine can distort
+	// any timing - but the printed ratio shows the real effect.
+	assert(rowMs < colMs*1.5, "row-major should not be slower")
+
+	fmt.Printf("  row-major    %7.1f ms\n", rowMs)
+	fmt.Printf("  column-major %7.1f ms   <- %.1fx slower, same O(n^2)\n",
+		colMs, colMs/rowMs)
 
 	fmt.Println("03-Arrays (Go): all checks passed")
 	fmt.Println("  2-D prefix sums checked against brute force on every rectangle")

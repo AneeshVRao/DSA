@@ -25,6 +25,14 @@ that does the same job. Knowing both is the point.
 | Matrix Block Sum | Every cell is one rectangle query, clamped to the edges. | [LeetCode 1314](https://leetcode.com/problems/matrix-block-sum/) |
 | Count Submatrices With All Ones | 2-D prefix sums, or a histogram sweep. | [LeetCode 1504](https://leetcode.com/problems/count-submatrices-with-all-ones/) |
 
+## Memory layout
+| Problem | Hint | Link |
+|---------|------|------|
+| Transpose Matrix | Then time it both ways round - the traversal order decides. | [LeetCode 867](https://leetcode.com/problems/transpose-matrix/) |
+| Spiral Matrix | Cache-hostile by construction; note where the misses land. | [LeetCode 54](https://leetcode.com/problems/spiral-matrix/) |
+| Rotate Image | In place, and think about which loop order touches fewer lines. | [LeetCode 48](https://leetcode.com/problems/rotate-image/) |
+| Set Matrix Zeroes | Watch out for the aliasing trap when you build the marker grid. | [LeetCode 73](https://leetcode.com/problems/set-matrix-zeroes/) |
+
 ## Self-check before moving on
 
 - [ ] I can implement a growable array with correct copy semantics.
@@ -33,3 +41,5 @@ that does the same job. Knowing both is the point.
 - [ ] I never compare a signed `int` against `v.size()` without a cast.
 - [ ] I know the erase-remove idiom and why `remove` alone is not enough.
 - [ ] I can build a 2-D prefix sum and explain the `+ corner` term.
+- [ ] I know which way round row-major storage runs, and why it matters.
+- [ ] I never build a 2-D grid by multiplying or filling with one row.

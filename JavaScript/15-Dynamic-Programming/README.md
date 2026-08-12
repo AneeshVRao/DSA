@@ -189,6 +189,79 @@ item be used twice, silently producing the unbounded answer.
 | LIS | `O(n^2)` | `O(n)` | `O(n log n)` |
 | Grid paths | `O(r * c)` | `O(r * c)` | `O(c)` |
 
+## Two more families: digit DP and game theory
+
+### Digit DP - counting numbers instead of iterating them
+
+The tell: **the answer is a count over a range**, and the range is far too large
+to walk - `N` up to `10^18`. So construct the numbers one digit at a time, left
+to right, and count whole branches instead of individual values.
+
+```text
+state = (pos, tight, ...whatever the constraint needs)
+```
+
+**The `tight` flag is the entire technique.** While every digit placed so far
+matches `N` exactly, the next digit is capped at `N[pos]`. The moment a smaller
+digit is chosen, the prefix is already below `N`, every later digit is free to
+be `0-9`, and *that subtree is shared by an enormous number of values* - which
+is what makes memoisation pay. Without `tight` the answer would depend on the
+whole prefix and there would be nothing to cache; with it, the prefix collapses
+to one bit.
+
+Two-sided ranges come from prefix subtraction: `f(low, high) = f(high) - f(low-1)`.
+The `low - 1` is what people get wrong.
+
+> **The leading-zero trap.** Candidates are built to the full width of `N`, so 7
+> is constructed as `007`. For a digit-SUM constraint that is harmless - zeros
+> add nothing. For a constraint on the **digits themselves** ("contains no 4",
+> "no two equal adjacent digits") the padding is fatal, and a third `started`
+> flag is required. This chapter implements both, so the difference is visible:
+> without `started`, `countWithoutDigit(50, 0)` returns 36 instead of 45.
+
+### Game theory DP - minimax, and why one minus sign is enough
+
+Two players alternate, both play optimally. The naive framing tracks two scores
+and whose turn it is. The collapse:
+
+```text
+best[i][j] = the MARGIN (my points - their points) for whoever moves next
+best[i][j] = max(values[i] - best[i+1][j],
+                 values[j] - best[i][j-1])
+```
+
+**That single minus sign is the whole of minimax.** There is no separate
+"minimising player" branch, because in a zero-sum game the opponent's best
+margin is exactly the negative of yours. This is the **negamax** form, and it
+turns `O(2^n)` into `O(n^2)`.
+
+### Alpha-beta pruning
+
+Carry two bounds down the tree: `alpha` (what the mover can already guarantee)
+and `beta` (the most the parent will ever allow). If `alpha >= beta` the parent
+has a better option elsewhere and will never come down this branch, so the rest
+of it need not be examined. **The answer is unchanged; only the cost falls.**
+
+> **The window must be SHIFTED, not just negated.** The textbook line
+> `-search(child, -beta, -alpha)` is correct only when a node's value is exactly
+> the negation of its child's. Here it is `face - child`, so solving
+> `alpha < face - child < beta` gives the child's window as
+> `(face - beta, face - alpha)` - and `face` differs per branch. Passing the
+> plain `(-beta, -alpha)` prunes live branches and returns a wrong margin on
+> some inputs, which only shows up when the pruned search is compared against
+> the unpruned one.
+
+Measured here: 131071 nodes unpruned, 96461 with alpha-beta - **27% cut** on a
+16-stone game. Modest, because the branching factor is only 2 and the move
+ordering is fixed; in chess-like trees with good ordering it takes the effective
+branching factor from `b` to roughly `sqrt(b)`, which is the difference between
+searching 6 plies and 12.
+
+And the honest comparison: the `O(n^2)` table answers the same question in 256
+cells. **Pruning a bad algorithm is not the same as picking a good one.**
+
+---
+
 ## Run the code
 
 ```bash
