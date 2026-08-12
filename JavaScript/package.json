@@ -1,0 +1,7 @@
+{
+  "name": "dsa-javascript",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DSA implementations in modern ES6+ JavaScript. Every file runs standalone: node <file>.js"
+}
