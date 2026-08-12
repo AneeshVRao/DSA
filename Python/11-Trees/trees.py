@@ -7,6 +7,7 @@ Run:  python trees.py
 
 from __future__ import annotations
 
+import random
 from collections import deque
 from typing import Optional, Sequence
 
@@ -400,6 +401,91 @@ def deserialize(data: str) -> Optional[TreeNode]:
 
 
 # ============================================================================
+# Euler tour - flattening a tree into an array
+# ============================================================================
+def euler_tour(root: Optional[TreeNode]) -> list[int]:
+    r"""The full walk: every node recorded on ENTRY and after each child. O(n).
+
+    A DFS that appends the current node every time control passes through it -
+    on the way in, and again after returning from each child. The result has
+    exactly 2n - 1 entries for an n-node tree.
+
+    Why it matters: it turns a TREE problem into an ARRAY problem. The lowest
+    common ancestor of u and v is the SHALLOWEST node in the tour between any
+    occurrence of u and any occurrence of v - which makes LCA a range-minimum
+    query, answerable in O(1) with the sparse table from chapter 19.
+
+              1
+             / \        tour: 1 2 4 2 5 2 1 3 1
+            2   3       LCA(4, 5) = the shallowest node between them = 2
+           / \
+          4   5
+
+    The three classic traversals are all projections of this one walk:
+      preorder  - take each node at its FIRST appearance
+      inorder   - take each node at its middle appearance (binary trees)
+      postorder - take each node at its LAST appearance
+    """
+    tour: list[int] = []
+    if root is None:
+        return tour
+
+    def walk(node: TreeNode) -> None:
+        tour.append(node.val)
+        for child in (node.left, node.right):
+            if child is not None:
+                walk(child)
+                tour.append(node.val)     # record the node again on the way back
+
+    walk(root)
+    return tour
+
+
+def euler_in_out(root: Optional[TreeNode]) -> dict[int, tuple[int, int]]:
+    """Entry and exit timestamps per node, as {value: (tin, tout)}. O(n).
+
+    The other Euler tour, and the more useful one in practice. Stamp a counter
+    on the way in and on the way out. Then:
+
+        u is an ancestor of v   <=>   tin[u] <= tin[v] and tout[v] <= tout[u]
+
+    An ancestor test in O(1), with no walking. Better still, a node's subtree
+    occupies the CONTIGUOUS range [tin, tout) of the entry order - so "sum over
+    a subtree" or "add x to a whole subtree" becomes a range query on a flat
+    array, which a Fenwick or segment tree handles in O(log n).
+
+    This is the standard preprocessing step for subtree queries, and half of
+    heavy-light decomposition.
+
+    Iterative to avoid blowing the stack on a degenerate (list-shaped) tree.
+    """
+    times: dict[int, tuple[int, int]] = {}
+    if root is None:
+        return times
+
+    clock = 0
+    entry: dict[int, int] = {}
+    # (node, expanded?) - False means "arriving", True means "leaving".
+    stack: list[tuple[TreeNode, bool]] = [(root, False)]
+
+    while stack:
+        node, leaving = stack.pop()
+        if leaving:
+            times[node.val] = (entry[node.val], clock)
+            continue
+
+        entry[node.val] = clock
+        clock += 1
+        stack.append((node, True))        # schedule the exit stamp
+        # Right first, so the left child is processed first off the stack.
+        for child in (node.right, node.left):
+            if child is not None:
+                stack.append((child, False))
+
+    return times
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -468,6 +554,75 @@ def demo() -> None:
     assert inorder(deserialize(encoded)) == inorder(tree)
     assert serialize(deserialize(encoded)) == encoded      # round trip
     assert deserialize(serialize(None)) is None
+
+    # --- Euler tour ----------------------------------------------------------
+    #        1
+    #       / \
+    #      2   3
+    #     / \
+    #    4   5
+    euler_tree = build_tree([1, 2, 3, 4, 5])
+    assert euler_tour(euler_tree) == [1, 2, 4, 2, 5, 2, 1, 3, 1]  # 2n-1 == 9
+    assert euler_tour(None) == []
+    assert euler_tour(TreeNode(7)) == [7]                 # a lone node
+
+    times = euler_in_out(euler_tree)
+    assert times[1] == (0, 5)                             # the root spans all
+    assert times[4] == (2, 3) and times[5] == (3, 4)      # leaves are width 1
+    assert euler_in_out(None) == {}
+
+    # The ancestor test the timestamps exist for.
+    def is_ancestor(u: int, v: int) -> bool:
+        return times[u][0] <= times[v][0] and times[v][1] <= times[u][1]
+
+    assert is_ancestor(1, 4) and is_ancestor(2, 5)
+    assert not is_ancestor(3, 4) and not is_ancestor(4, 2)
+    assert is_ancestor(3, 3)                              # a node contains itself
+
+    # Against brute force on random trees: the tour has 2n-1 entries, every
+    # node appears (children + 1) times, and the timestamps agree with an
+    # explicit ancestor search.
+    random.seed(11)
+    counter = iter(range(10_000))
+
+    def random_tree(size: int) -> Optional[TreeNode]:
+        """A random-shaped tree with distinct values, built top-down."""
+        if size == 0:
+            return None
+        left_size = random.randrange(size)                # 0..size-1
+        node = TreeNode(next(counter))
+        node.left = random_tree(left_size)
+        node.right = random_tree(size - 1 - left_size)
+        return node
+
+    def subtree_values(node: Optional[TreeNode]) -> list[int]:
+        if node is None:
+            return []
+        return [node.val] + subtree_values(node.left) + subtree_values(node.right)
+
+    for _ in range(60):
+        size = random.randint(1, 40)
+        root = random_tree(size)
+
+        tour = euler_tour(root)
+        assert len(tour) == 2 * size - 1
+
+        stamps = euler_in_out(root)
+        assert len(stamps) == size
+
+        # Every node's subtree is a CONTIGUOUS timestamp range of its own size -
+        # the property that makes subtree queries into range queries.
+        def check(node: Optional[TreeNode]) -> None:
+            if node is None:
+                return
+            tin, tout = stamps[node.val]
+            members = subtree_values(node)
+            assert tout - tin == len(members)
+            assert all(tin <= stamps[other][0] < tout for other in members)
+            check(node.left)
+            check(node.right)
+
+        check(root)
 
     print("11-Trees (Python): all checks passed")
 

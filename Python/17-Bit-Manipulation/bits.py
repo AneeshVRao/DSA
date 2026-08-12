@@ -230,6 +230,69 @@ def hamming_distance(a: int, b: int) -> int:
 
 
 # ============================================================================
+# Gray code - consecutive values that differ in exactly one bit
+# ============================================================================
+def to_gray(n: int) -> int:
+    """The nth Gray code. O(1).
+
+        G(n) = n XOR (n >> 1)
+
+    A Gray code is an ordering of the integers where CONSECUTIVE values differ
+    in exactly one bit. Ordinary binary does not have that property: 3 -> 4 is
+    011 -> 100, three bits flipping at once.
+
+    Why one xor does it. Adding 1 to n flips a trailing run of 1s to 0s and the
+    0 above them to 1. Shifting right by one and xoring lines each bit up with
+    its neighbour, so the whole flipped run cancels out and only the boundary
+    survives - exactly one changed bit.
+
+        n:  0  1  2  3  4  5  6  7
+        G:  0  1  3  2  6  7  5  4
+        b: 000 001 011 010 110 111 101 100
+                ^   ^   ^   ^   ^   ^   ^     one bit changes each step
+
+    Where it matters: rotary encoders and ADCs (a misread during a transition
+    gives a neighbouring value, never a wild one), Karnaugh maps, genetic
+    algorithm encodings, and generating subsets so that consecutive subsets
+    differ by one element.
+    """
+    return n ^ (n >> 1)
+
+
+def from_gray(gray: int) -> int:
+    """Invert to_gray. O(log n).
+
+    Each binary bit is the xor of all Gray bits at or above it, so the answer
+    is a running prefix-xor from the top down. Doubling the shift each round
+    folds the whole prefix in log(bits) steps instead of one bit at a time.
+    """
+    n = gray
+    shift = 1
+    while n >> shift:
+        n ^= n >> shift       # fold the RUNNING value, not the original
+        shift <<= 1
+    return n
+
+
+def gray_code_sequence(bits: int) -> list[int]:
+    """All 2^bits values in Gray-code order. O(2^bits).
+
+    Two ways to see it, both worth knowing:
+
+      DIRECT:    [to_gray(i) for i in range(2**bits)]
+      REFLECTED: take the (bits-1) sequence, then append its REVERSE with the
+                 top bit set. The mirror point is where the reflection makes
+                 the two halves differ in only that new bit.
+
+    The reflected construction is why it is called a "reflected binary code",
+    and it generalises to non-power-of-two alphabets where the xor trick does
+    not apply. The direct form is used here; the demo checks it against the
+    reflected one.
+    """
+    return [to_gray(i) for i in range(1 << bits)]
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -293,6 +356,38 @@ def demo() -> None:
 
     assert hamming_distance(1, 4) == 2           # 0001 vs 0100
     assert hamming_distance(3, 3) == 0
+
+    # --- Gray code -----------------------------------------------------------
+    assert [to_gray(n) for n in range(8)] == [0, 1, 3, 2, 6, 7, 5, 4]
+    assert to_gray(0) == 0
+
+    assert gray_code_sequence(0) == [0]
+    assert gray_code_sequence(1) == [0, 1]
+    assert gray_code_sequence(2) == [0, 1, 3, 2]
+    assert gray_code_sequence(3) == [0, 1, 3, 2, 6, 7, 5, 4]
+
+    for bits in range(1, 13):
+        sequence = gray_code_sequence(bits)
+
+        # It is a permutation of 0..2^bits - 1, with nothing missing or doubled.
+        assert len(sequence) == 1 << bits
+        assert set(sequence) == set(range(1 << bits))
+
+        # THE defining property: consecutive entries differ in exactly one bit.
+        for previous, current in zip(sequence, sequence[1:]):
+            assert count_set_bits_kernighan(previous ^ current) == 1
+
+        # It is CYCLIC too - the last wraps to the first in one bit as well.
+        assert count_set_bits_kernighan(sequence[-1] ^ sequence[0]) == 1
+
+        # Round-trip, and agreement with the reflected construction.
+        for n in range(1 << bits):
+            assert from_gray(to_gray(n)) == n
+
+        if bits > 1:
+            smaller = gray_code_sequence(bits - 1)
+            reflected = smaller + [(1 << (bits - 1)) | x for x in reversed(smaller)]
+            assert sequence == reflected
 
     print("17-Bit-Manipulation (Python): all checks passed")
 

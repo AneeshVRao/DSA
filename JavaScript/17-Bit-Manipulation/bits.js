@@ -203,6 +203,71 @@ export const hammingDistance = (a, b) => countSetBitsKernighan(a ^ b);
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Gray code - consecutive values that differ in exactly one bit
+// ============================================================================
+/**
+ * The nth Gray code. O(1).
+ *
+ *     G(n) = n XOR (n >> 1)
+ *
+ * A Gray code orders the integers so CONSECUTIVE values differ in exactly one
+ * bit. Ordinary binary does not: 3 -> 4 is 011 -> 100, three bits at once.
+ *
+ * Why one xor does it. Adding 1 to n flips a trailing run of 1s to 0s and the
+ * 0 above them to 1. Shifting right by one and xoring lines each bit up with
+ * its neighbour, so the flipped run cancels and only the boundary survives -
+ * exactly one changed bit.
+ *
+ *     n:  0  1  2  3  4  5  6  7
+ *     G:  0  1  3  2  6  7  5  4
+ *     b: 000 001 011 010 110 111 101 100
+ *             ^   ^   ^   ^   ^   ^   ^     one bit changes each step
+ *
+ * Where it matters: rotary encoders and ADCs (a misread mid-transition gives a
+ * neighbouring value, never a wild one), Karnaugh maps, genetic-algorithm
+ * encodings, and generating subsets so consecutive ones differ by one element.
+ *
+ * `>>> 0` throughout: JS bitwise operators produce SIGNED 32-bit results, so
+ * anything with bit 31 set would come back negative without it.
+ */
+export function toGray(n) {
+  return (n ^ (n >>> 1)) >>> 0;
+}
+
+/**
+ * Invert `toGray`. O(log n).
+ *
+ * Each binary bit is the xor of all Gray bits at or above it, so the answer is a
+ * running prefix-xor from the top down. Doubling the shift folds the whole
+ * prefix in log(bits) steps instead of one bit at a time.
+ */
+export function fromGray(gray) {
+  let n = gray >>> 0;
+  for (let shift = 1; n >>> shift; shift <<= 1) {
+    n = (n ^ (n >>> shift)) >>> 0; // fold the RUNNING value, not the original
+  }
+  return n;
+}
+
+/**
+ * All `2^bits` values in Gray-code order. O(2^bits).
+ *
+ * Two ways to see it, both worth knowing:
+ *
+ *   DIRECT:    `toGray(i)` for `i` in `0..2^bits-1`
+ *   REFLECTED: take the `bits-1` sequence, then append its REVERSE with the top
+ *              bit set. The mirror point is where the reflection makes the two
+ *              halves differ in only that new bit.
+ *
+ * The reflected construction is why it is called a "reflected binary code", and
+ * it generalises to non-power-of-two alphabets where the xor trick does not
+ * apply. The direct form is used here; the demo checks it against the reflected.
+ */
+export function grayCodeSequence(bits) {
+  return Array.from({ length: 1 << bits }, (_, i) => toGray(i));
+}
+
 function demo() {
   const n = 0b1010; // 10
   assert.equal(getBit(n, 1), 1);
@@ -278,6 +343,39 @@ function demo() {
   assert.equal(-8 >>> 28, 15); // logical shift fills with zeros
   // BigInt keeps full precision where 32-bit operators cannot.
   assert.equal((1n << 40n) & (1n << 40n), 1n << 40n);
+  // --- Gray code ----------------------------------------------------------
+  assert.deepEqual(grayCodeSequence(3), [0, 1, 3, 2, 6, 7, 5, 4]);
+  assert.equal(toGray(0), 0);
+  assert.deepEqual(grayCodeSequence(0), [0]);
+  assert.deepEqual(grayCodeSequence(1), [0, 1]);
+  assert.deepEqual(grayCodeSequence(2), [0, 1, 3, 2]);
+
+  for (let bits = 1; bits <= 12; bits++) {
+    const sequence = grayCodeSequence(bits);
+
+    // It is a permutation of 0..2^bits-1: nothing missing or doubled.
+    assert.equal(sequence.length, 1 << bits);
+    assert.equal(new Set(sequence).size, 1 << bits);
+
+    // THE defining property: consecutive entries differ in exactly one bit.
+    for (let i = 1; i < sequence.length; i++) {
+      assert.equal(countSetBitsKernighan(sequence[i] ^ sequence[i - 1]), 1);
+    }
+
+    // It is CYCLIC too - the last wraps to the first in one bit as well.
+    assert.equal(countSetBitsKernighan(sequence.at(-1) ^ sequence[0]), 1);
+
+    // Round-trip.
+    for (let n = 0; n < 1 << bits; n++) assert.equal(fromGray(toGray(n)), n);
+
+    // And agreement with the reflected construction.
+    if (bits > 1) {
+      const smaller = grayCodeSequence(bits - 1);
+      const reflected = [...smaller, ...[...smaller].reverse().map((x) => (1 << (bits - 1)) | x)];
+      assert.deepEqual(sequence, reflected);
+    }
+  }
+
 
   console.log("17-Bit-Manipulation (JavaScript): all checks passed");
 }

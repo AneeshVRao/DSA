@@ -261,6 +261,137 @@ class TaskQueue:
 
 
 # ============================================================================
+# Indexed priority queue - a heap whose keys can be CHANGED
+# ============================================================================
+class IndexedPriorityQueue:
+    """A min-heap supporting change_priority and remove in O(log n).
+
+    THE PROBLEM. A plain binary heap can only look at its root. To lower the
+    priority of some arbitrary item you would first have to FIND it - O(n) -
+    which defeats the point. So the standard workaround in Dijkstra is to push
+    a duplicate entry and skip stale ones on pop:
+
+        if distance > best[node]: continue     # stale entry, ignore it
+
+    That is correct and usually fine, but the heap can grow to O(E) entries
+    instead of O(V).
+
+    THE FIX. Keep a second structure - a map from item to its current position
+    in the heap array - updated on every swap. Now any item can be located in
+    O(1) and re-sifted in O(log n).
+
+        heap[i]        the item at heap position i
+        position[item] the heap position of that item  (the inverse map)
+
+    Every swap must update BOTH. That is the entire implementation difficulty:
+    one forgotten position write and the map silently goes stale, which shows
+    up much later as a wrong answer rather than a crash.
+
+    WHERE IT PAYS OFF:
+      - Dijkstra and Prim with decrease-key: heap size stays O(V), and the
+        bound becomes a true O(E + V log V) with a Fibonacci heap (O(E log V)
+        here, but with far fewer entries)
+      - A* with reopened nodes
+      - task schedulers where a queued job's priority is revised
+      - LRU/LFU caches with an evictable score per key
+
+    Items must be hashable and unique - they are dictionary keys here.
+    """
+
+    def __init__(self) -> None:
+        self.heap: list[tuple[float, object]] = []       # (priority, item)
+        self.position: dict[object, int] = {}            # item -> heap index
+
+    def __len__(self) -> int:
+        return len(self.heap)
+
+    def __contains__(self, item: object) -> bool:
+        return item in self.position
+
+    def _swap(self, i: int, j: int) -> None:
+        """The ONE place the two structures are kept in step."""
+        self.heap[i], self.heap[j] = self.heap[j], self.heap[i]
+        self.position[self.heap[i][1]] = i
+        self.position[self.heap[j][1]] = j
+
+    def _sift_up(self, i: int) -> None:
+        while i > 0:
+            parent = (i - 1) // 2
+            if self.heap[i][0] >= self.heap[parent][0]:
+                break
+            self._swap(i, parent)
+            i = parent
+
+    def _sift_down(self, i: int) -> None:
+        n = len(self.heap)
+        while True:
+            smallest = i
+            for child in (2 * i + 1, 2 * i + 2):
+                if child < n and self.heap[child][0] < self.heap[smallest][0]:
+                    smallest = child
+            if smallest == i:
+                return
+            self._swap(i, smallest)
+            i = smallest
+
+    def push(self, item: object, priority: float) -> None:
+        """Insert, or update if already present. O(log n)."""
+        if item in self.position:
+            self.change_priority(item, priority)
+            return
+        self.heap.append((priority, item))
+        self.position[item] = len(self.heap) - 1
+        self._sift_up(len(self.heap) - 1)
+
+    def peek(self) -> tuple[float, object]:
+        """Smallest (priority, item) without removing it. O(1)."""
+        if not self.heap:
+            raise IndexError("peek from an empty priority queue")
+        return self.heap[0]
+
+    def pop(self) -> tuple[float, object]:
+        """Remove and return the smallest (priority, item). O(log n)."""
+        if not self.heap:
+            raise IndexError("pop from an empty priority queue")
+        return self._remove_at(0)
+
+    def change_priority(self, item: object, priority: float) -> None:
+        """Re-key an item already in the queue. O(log n).
+
+        Sift in whichever direction the change calls for - decrease-key moves
+        the item up, increase-key moves it down. Doing both unconditionally is
+        harmless (one is a no-op) but the comparison makes the intent explicit.
+        """
+        if item not in self.position:
+            raise KeyError(f"{item!r} is not in the queue")
+        i = self.position[item]
+        old = self.heap[i][0]
+        self.heap[i] = (priority, item)
+        if priority < old:
+            self._sift_up(i)
+        elif priority > old:
+            self._sift_down(i)
+
+    def remove(self, item: object) -> tuple[float, object]:
+        """Remove an arbitrary item. O(log n) - impossible with a plain heap."""
+        if item not in self.position:
+            raise KeyError(f"{item!r} is not in the queue")
+        return self._remove_at(self.position[item])
+
+    def _remove_at(self, i: int) -> tuple[float, object]:
+        """Swap the target with the last slot, drop it, then re-sift."""
+        last = len(self.heap) - 1
+        self._swap(i, last)
+        removed = self.heap.pop()
+        del self.position[removed[1]]
+
+        if i < last:                     # something was moved into position i
+            self._sift_down(i)
+            self._sift_up(i)             # it may belong ABOVE its new parent
+        return removed
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -327,6 +458,79 @@ def demo() -> None:
     assert tasks.next_task() == "review the PR"   # tie broken by arrival order
     assert tasks.next_task() == "write tests"
     assert len(tasks) == 0
+
+    # --- Indexed priority queue ----------------------------------------------
+    ipq = IndexedPriorityQueue()
+    for item, priority in [("a", 5), ("b", 3), ("c", 8), ("d", 1)]:
+        ipq.push(item, priority)
+
+    assert len(ipq) == 4
+    assert "c" in ipq and "z" not in ipq
+    assert ipq.peek() == (1, "d")
+
+    # The operation a plain heap cannot do: re-key an interior item.
+    ipq.change_priority("c", 0)                  # 8 -> 0, must rise to the top
+    assert ipq.peek() == (0, "c")
+    ipq.change_priority("c", 100)                # and back down again
+    assert ipq.peek() == (1, "d")
+
+    # Remove from the middle, also impossible with a plain heap.
+    assert ipq.remove("a") == (5, "a")
+    assert "a" not in ipq and len(ipq) == 3
+
+    assert ipq.pop() == (1, "d")
+    assert ipq.pop() == (3, "b")
+    assert ipq.pop() == (100, "c")
+    assert len(ipq) == 0
+
+    for empty_call in (ipq.pop, ipq.peek):
+        try:
+            empty_call()
+            raise AssertionError("expected IndexError")
+        except IndexError:
+            pass
+
+    # push() on an existing item updates rather than duplicating.
+    ipq.push("x", 5)
+    ipq.push("x", 2)
+    assert len(ipq) == 1 and ipq.peek() == (2, "x")
+
+    # Against a sorted list, with the position map re-verified after EVERY
+    # operation - a stale index would otherwise stay silent until much later.
+    random.seed(13)
+    for _ in range(60):
+        queue = IndexedPriorityQueue()
+        reference: dict[str, float] = {}
+
+        for _ in range(120):
+            item = f"item{random.randrange(15)}"
+            roll = random.random()
+
+            if roll < 0.45:
+                priority = random.randint(0, 100)
+                queue.push(item, priority)
+                reference[item] = priority
+            elif roll < 0.65 and item in reference:
+                priority = random.randint(0, 100)
+                queue.change_priority(item, priority)
+                reference[item] = priority
+            elif roll < 0.8 and item in reference:
+                assert queue.remove(item) == (reference.pop(item), item)
+            elif reference:
+                lowest = min(reference.values())
+                priority, popped = queue.pop()
+                assert priority == lowest             # the true minimum
+                assert reference.pop(popped) == priority
+
+            assert len(queue) == len(reference)
+
+            # The heap property, and the position map matching the array.
+            for i, (priority, item_at) in enumerate(queue.heap):
+                assert queue.position[item_at] == i
+                assert reference[item_at] == priority
+                parent = (i - 1) // 2
+                if i > 0:
+                    assert queue.heap[parent][0] <= priority
 
     print("13-Heaps-Priority-Queue (Python): all checks passed")
 

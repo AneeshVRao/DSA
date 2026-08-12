@@ -8,6 +8,8 @@ Run:  python searching.py
 from __future__ import annotations
 
 import bisect
+import random
+from typing import Callable
 
 
 # ============================================================================
@@ -285,6 +287,88 @@ def koko_eating_speed(piles: list[int], hours: int) -> int:
 
 
 # ============================================================================
+# Ternary search - the extremum of a UNIMODAL function
+# ============================================================================
+def ternary_search_max(low: int, high: int, f: Callable[[int], float]) -> int:
+    """Index of the maximum of a unimodal function on [low, high]. O(log n).
+
+    Binary search needs a MONOTONIC predicate - "is this true from here on?".
+    Ternary search needs something weaker but different: UNIMODALITY. The values
+    rise to a single peak and then fall (or fall to a single trough and rise).
+
+            f
+            |        *
+            |      *   *
+            |    *       *
+            |  *           *
+            +-------------------- x
+                     ^ the peak
+
+    Cut the range at two points instead of one:
+
+        if f(m1) < f(m2)  the peak is right of m1  -> discard [low, m1]
+        else              the peak is left of m2   -> discard [m2, high]
+
+    Each round keeps two thirds of the range, so it is O(log_1.5 n) - about
+    1.7x more evaluations than binary search, but binary search cannot be used
+    here at all: "is f increasing at x?" is not a monotone predicate when the
+    function has a peak.
+
+    THE TRAP: on a PLATEAU (f(m1) == f(m2) with equal values between them) the
+    range never shrinks past the flat part, and the answer can be any point on
+    it. Strictly unimodal input, or a different method.
+
+    This integer version narrows to a window of three and scans it, which
+    sidesteps the off-by-one that plagues the "while low < high" form.
+    """
+    while high - low > 2:
+        third = (high - low) // 3
+        m1 = low + third
+        m2 = high - third
+        if f(m1) < f(m2):
+            low = m1 + 1                  # the peak cannot be at or left of m1
+        else:
+            high = m2 - 1                 # the peak cannot be at or right of m2
+
+    best = low
+    for x in range(low + 1, high + 1):    # at most three candidates remain
+        if f(x) > f(best):
+            best = x
+    return best
+
+
+def ternary_search_min_float(low: float, high: float,
+                             f: Callable[[float], float],
+                             iterations: int = 200) -> float:
+    """Argument minimising a unimodal continuous function. O(iterations).
+
+    On reals there is no "adjacent" value to stop at, so the loop runs a FIXED
+    number of rounds rather than testing for convergence. Each round keeps two
+    thirds, so 200 rounds shrink the interval by (2/3)^200 - astronomically
+    below any float's precision, and it cannot loop forever on a plateau.
+
+    Iterating a fixed count is the standard idiom for continuous ternary
+    search; `while high - low > 1e-9` risks spinning when the values stop
+    changing at float resolution.
+
+    ACCURACY, AND WHY MORE ITERATIONS DO NOT HELP. Near a smooth minimum the
+    function is locally quadratic: f(x) ~ f(x*) + c(x - x*)^2. So a distance of
+    d from the true minimum changes f by only ~c*d^2, and once d drops to about
+    sqrt(machine epsilon) ~ 1.5e-8 the two probes compare EQUAL in float and
+    the comparison becomes noise. Expect ~1e-8 accuracy in x, never 1e-15 -
+    that is a property of the problem, not of the loop count.
+    """
+    for _ in range(iterations):
+        m1 = low + (high - low) / 3
+        m2 = high - (high - low) / 3
+        if f(m1) < f(m2):
+            high = m2                     # the minimum is left of m2
+        else:
+            low = m1                      # the minimum is right of m1
+    return (low + high) / 2
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -341,6 +425,40 @@ def demo() -> None:
     assert min_ship_capacity([3, 2, 2, 4, 1, 4], 3) == 6
     assert koko_eating_speed([3, 6, 7, 11], 8) == 4
     assert koko_eating_speed([30, 11, 23, 4, 20], 5) == 30
+
+    # --- Ternary search ------------------------------------------------------
+    # A discrete parabola peaking at x = 7.
+    peak = lambda x: -(x - 7) ** 2 + 100
+    assert ternary_search_max(0, 20, peak) == 7
+    assert ternary_search_max(7, 7, peak) == 7        # a single point
+    assert ternary_search_max(0, 7, peak) == 7        # peak at the boundary
+    assert ternary_search_max(7, 20, peak) == 7
+
+    # Strictly increasing and strictly decreasing are both unimodal.
+    assert ternary_search_max(0, 10, lambda x: x) == 10
+    assert ternary_search_max(0, 10, lambda x: -x) == 0
+
+    # Against brute force on random strictly-unimodal functions.
+    random.seed(8)
+    for _ in range(200):
+        n = random.randint(1, 60)
+        apex = random.randrange(n)
+        scale = random.randint(1, 5)
+        shape = lambda x: -scale * (x - apex) ** 2
+
+        assert ternary_search_max(0, n - 1, shape) == apex
+        assert max(range(n), key=shape) == apex       # brute force agrees
+
+    # Continuous: minimise (x - 2.5)^2 + 1, minimum at x = 2.5.
+    # 1e-6, not 1e-15: a quadratic is flat at its minimum, so the probes stop
+    # differing in float at about sqrt(machine epsilon) - see the docstring.
+    found = ternary_search_min_float(-10.0, 10.0, lambda x: (x - 2.5) ** 2 + 1)
+    assert abs(found - 2.5) < 1e-6
+
+    # A function whose slope does NOT vanish at the minimum converges much
+    # further, which is the same point from the other side.
+    kinked = ternary_search_min_float(-10.0, 10.0, lambda x: abs(x - 2.5))
+    assert abs(kinked - 2.5) < 1e-12
 
     print("08-Searching (Python): all checks passed")
 

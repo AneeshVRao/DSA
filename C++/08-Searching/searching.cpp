@@ -6,7 +6,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <functional>
 #include <iostream>
+#include <random>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -239,6 +242,85 @@ long long kokoEatingSpeed(const vector<int>& piles, int hours) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Ternary search - the extremum of a UNIMODAL function
+// ============================================================================
+
+// Index of the maximum of a UNIMODAL function on [low, high]. O(log n).
+//
+// Binary search needs a MONOTONIC predicate - "is this true from here on?".
+// Ternary search needs something weaker but different: UNIMODALITY. The values
+// rise to a single peak and then fall (or fall to a trough and rise).
+//
+//     f
+//     |        *
+//     |      *   *
+//     |    *       *
+//     |  *           *
+//     +-------------------- x
+//              ^ the peak
+//
+// Cut the range at TWO points instead of one:
+//
+//     if f(m1) < f(m2)  the peak is right of m1  -> discard [low, m1]
+//     else              the peak is left of m2   -> discard [m2, high]
+//
+// Each round keeps two thirds, so it is O(log_1.5 n) - about 1.7x more
+// evaluations than binary search, but binary search cannot be used here at
+// all: "is f increasing at x?" is not monotone when the function has a peak.
+//
+// THE TRAP: on a PLATEAU (f(m1) == f(m2) with equal values between) the range
+// never shrinks past the flat part. Strictly unimodal input, or another method.
+//
+// This integer version narrows to a window of three and scans it, which
+// sidesteps the off-by-one that plagues the "while low < high" form.
+int ternarySearchMax(int low, int high, const function<double(int)>& f) {
+    while (high - low > 2) {
+        int third = (high - low) / 3;
+        int m1 = low + third;
+        int m2 = high - third;
+        if (f(m1) < f(m2)) {
+            low = m1 + 1;                 // the peak cannot be at or left of m1
+        } else {
+            high = m2 - 1;                // the peak cannot be at or right of m2
+        }
+    }
+
+    int best = low;
+    for (int x = low + 1; x <= high; x++) {   // at most three candidates remain
+        if (f(x) > f(best)) best = x;
+    }
+    return best;
+}
+
+// Argument minimising a unimodal CONTINUOUS function. O(iterations).
+//
+// On reals there is no "adjacent" value to stop at, so the loop runs a FIXED
+// number of rounds rather than testing convergence. Each round keeps two
+// thirds, so 200 rounds shrink the interval by (2/3)^200 - astronomically
+// below any double's precision, and it cannot spin forever on a plateau.
+//
+// ACCURACY, AND WHY MORE ITERATIONS DO NOT HELP. Near a smooth minimum the
+// function is locally quadratic: f(x) ~ f(x*) + c(x - x*)^2. A distance d from
+// the true minimum changes f by only ~c*d^2, so once d reaches about
+// sqrt(machine epsilon) ~ 1.5e-8 the two probes compare EQUAL and the
+// comparison becomes noise. Expect ~1e-8 accuracy in x, never 1e-15 - that is
+// a property of the problem, not of the loop count.
+double ternarySearchMinDouble(double low, double high,
+                              const function<double(double)>& f,
+                              int iterations = 200) {
+    for (int i = 0; i < iterations; i++) {
+        double m1 = low + (high - low) / 3;
+        double m2 = high - (high - low) / 3;
+        if (f(m1) < f(m2)) {
+            high = m2;                    // the minimum is left of m2
+        } else {
+            low = m1;                     // the minimum is right of m1
+        }
+    }
+    return (low + high) / 2;
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -295,6 +377,47 @@ int main() {
     assert(minShipCapacity({3, 2, 2, 4, 1, 4}, 3) == 6);
     assert(kokoEatingSpeed({3, 6, 7, 11}, 8) == 4);
     assert(kokoEatingSpeed({30, 11, 23, 4, 20}, 5) == 30);
+    // --- Ternary search -------------------------------------------------------
+    // A discrete parabola peaking at x = 7.
+    auto peak = [](int x) { return -double((x - 7) * (x - 7)) + 100; };
+    assert(ternarySearchMax(0, 20, peak) == 7);
+    assert(ternarySearchMax(7, 7, peak) == 7);        // a single point
+    assert(ternarySearchMax(0, 7, peak) == 7);        // peak at the boundary
+    assert(ternarySearchMax(7, 20, peak) == 7);
+
+    // Strictly increasing and strictly decreasing are both unimodal.
+    assert(ternarySearchMax(0, 10, [](int x) { return double(x); }) == 10);
+    assert(ternarySearchMax(0, 10, [](int x) { return -double(x); }) == 0);
+
+    // Against brute force on random strictly-unimodal functions.
+    mt19937 ternaryRng(8);
+    for (int trial = 0; trial < 200; trial++) {
+        int n = int(ternaryRng() % 60) + 1;
+        int apex = int(ternaryRng() % unsigned(n));
+        int scale = int(ternaryRng() % 5) + 1;
+        auto shape = [apex, scale](int x) { return -double(scale) * (x - apex) * (x - apex); };
+
+        assert(ternarySearchMax(0, n - 1, shape) == apex);
+
+        int brute = 0;                                // brute force agrees
+        for (int x = 1; x < n; x++) {
+            if (shape(x) > shape(brute)) brute = x;
+        }
+        assert(brute == apex);
+    }
+
+    // Continuous: minimise (x - 2.5)^2 + 1. 1e-6, not 1e-15 - a quadratic is
+    // flat at its minimum, so the probes stop differing at sqrt(epsilon).
+    double found = ternarySearchMinDouble(
+        -10.0, 10.0, [](double x) { return (x - 2.5) * (x - 2.5) + 1; });
+    assert(fabs(found - 2.5) < 1e-6);
+
+    // A function whose slope does NOT vanish converges much further - the same
+    // point from the other side.
+    double kinked = ternarySearchMinDouble(
+        -10.0, 10.0, [](double x) { return fabs(x - 2.5); });
+    assert(fabs(kinked - 2.5) < 1e-12);
+
 
     cout << "08-Searching (C++): all checks passed\n";
     return 0;
