@@ -81,6 +81,41 @@ Naive is `O(n * m)`. KMP precomputes a failure table so the text pointer never
 moves backwards: `O(n + m)`. The table entry `lps[i]` is the length of the
 longest proper prefix of `pat[:i+1]` that is also a suffix of it.
 
+### f. Rabin-Karp - the rolling hash
+
+A different bargain from KMP. Hash the pattern once, slide a window over the
+text keeping its hash in `O(1)` per step, and only compare characters when the
+hashes agree.
+
+```text
+hash("abc") = (a*B^2 + b*B^1 + c*B^0) mod M
+
+roll one step:  new = (old - leading * B^(m-1)) * B + trailing   (mod M)
+```
+
+Precomputing `B^(m-1)` is what makes the roll constant time.
+
+> **The verification is not optional.** Two different strings can share a hash.
+> On a hash match the characters must still be compared. A hash equality is a
+> *cheap filter*, never a proof - skip that step and the function silently
+> returns wrong answers.
+
+Expected `O(n + m)`, worst case `O(n * m)` under engineered collisions. So why
+use it when KMP is worst-case linear? Because the rolling hash **generalises**
+where KMP does not:
+
+| Task | Why Rabin-Karp |
+|------|----------------|
+| Search for many patterns at once | hash them all into one set, still one pass |
+| 2-D pattern matching in a grid | roll horizontally, then vertically |
+| **Longest duplicate substring** | binary search the length, hash every window |
+| Plagiarism / rsync-style diffing | compare block fingerprints, not blocks |
+
+The longest-duplicate-substring trick is worth knowing on its own: if a repeat
+of length `L` exists then so does one of every shorter length, so the answer is
+**binary-searchable** - `O(n log n)` overall.
+
+
 ---
 
 ## 5. String methods worth memorising
@@ -126,6 +161,8 @@ f"{value:>8.2f}"   # formatting mini-language
 | `compress` (RLE) | `O(n)` | `O(n)` |
 | `naive_search` | `O(n * m)` | `O(1)` |
 | `kmp_search` | `O(n + m)` | `O(m)` |
+| `rabin_karp_search` | `O(n + m)` expected | `O(1)` |
+| `longest_duplicate_substring` | `O(n log n)` expected | `O(n)` |
 | `group_anagrams` | `O(n * k)` | `O(n * k)` |
 
 ## Run the code

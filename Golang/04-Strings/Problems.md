@@ -18,6 +18,15 @@ Decide up front whether the problem is byte-oriented (ASCII) or rune-oriented
 | 11 | Reverse String | `[]byte` two pointers, in place. | [LeetCode 344](https://leetcode.com/problems/reverse-string/) |
 | 12 | Implement Atoi | Careful overflow handling with `int64`. | [LeetCode 8](https://leetcode.com/problems/string-to-integer-atoi/) |
 
+## Rolling hash
+| Problem | Hint | Link |
+|---------|------|------|
+| Longest Duplicate Substring | Binary search the length, hash every window of it. | [LeetCode 1044](https://leetcode.com/problems/longest-duplicate-substring/) |
+| Repeated DNA Sequences | Fixed window of 10 - a rolling hash or a set of slices. | [LeetCode 187](https://leetcode.com/problems/repeated-dna-sequences/) |
+| Longest Happy Prefix | Prefix == suffix: KMP's LPS, or hash both ends. | [LeetCode 1392](https://leetcode.com/problems/longest-happy-prefix/) |
+| Distinct Echo Substrings | Hash to compare halves in O(1). | [LeetCode 1316](https://leetcode.com/problems/distinct-echo-substrings/) |
+| Rabin-Karp / Search Pattern | The reference implementation - and verify on hash match. | [GfG](https://www.geeksforgeeks.org/problems/search-pattern-rabin-karp-algorithm--141631/1) |
+
 ## Self-check before moving on
 
 - [ ] I know `len(s)` counts bytes, not characters.
@@ -25,3 +34,4 @@ Decide up front whether the problem is byte-oriented (ASCII) or rune-oriented
 - [ ] I use `[26]int` arrays as map keys where it helps.
 - [ ] I know string slicing is `O(1)` and shares memory.
 - [ ] I can write the KMP LPS table from memory.
+- [ ] I never trust a hash match without comparing the characters.

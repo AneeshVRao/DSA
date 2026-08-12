@@ -6,6 +6,7 @@ Run:  python strings.py
 
 from __future__ import annotations
 
+import random
 from collections import Counter, defaultdict
 
 
@@ -211,6 +212,127 @@ def kmp_search(text: str, pattern: str) -> list[int]:
     return hits
 
 
+def rabin_karp_search(text: str, pattern: str,
+                      base: int = 256, modulus: int = 1_000_000_007) -> list[int]:
+    """All start indices of pattern in text. O(n + m) expected, O(1) space.
+
+    KMP avoids re-scanning by remembering prefix structure. Rabin-Karp takes a
+    completely different route: HASH the pattern once, then slide a window over
+    the text maintaining its hash in O(1) per step, and only compare characters
+    when the hashes agree.
+
+    THE ROLLING HASH. Treat the window as a base-B number modulo a prime:
+
+        hash("abc") = (a * B^2 + b * B^1 + c * B^0) mod M
+
+    Sliding one character right is three operations, not m:
+
+        new = (old - leading * B^(m-1)) * B + trailing     (all mod M)
+
+    Removing the leading digit is why B^(m-1) is precomputed - recomputing it
+    inside the loop would make the whole thing O(n log m).
+
+    THE VERIFICATION IS NOT OPTIONAL. Different strings can share a hash. On a
+    match the characters must still be compared, or the function silently
+    returns wrong positions. A hash equality is a CHEAP FILTER, never a proof:
+
+        if window_hash == pattern_hash and text[i:i+m] == pattern:
+                                           ^^^^^^^^^^^^^^^^^^^^^ this half
+
+    Expected O(n + m); worst case O(n * m) if an adversary engineers collisions
+    for every window. A large random-ish prime modulus makes that vanishingly
+    unlikely in practice.
+
+    WHY BOTHER when KMP is worst-case linear? Because the rolling hash
+    generalises where KMP does not:
+      - searching for MANY patterns at once (hash them all into a set)
+      - 2-D pattern matching in a grid
+      - "longest duplicate substring" - binary search the length, hash every
+        window of that length, look for a repeat
+      - detecting repeated blocks, plagiarism, rsync-style diffing
+    """
+    n, m = len(text), len(pattern)
+    if not pattern or m > n:
+        return []
+
+    # B^(m-1) mod M - the weight of the character leaving the window.
+    high_order = pow(base, m - 1, modulus)
+
+    pattern_hash = 0
+    window_hash = 0
+    for i in range(m):                        # hash the pattern and the first window
+        pattern_hash = (pattern_hash * base + ord(pattern[i])) % modulus
+        window_hash = (window_hash * base + ord(text[i])) % modulus
+
+    hits: list[int] = []
+    for start in range(n - m + 1):
+        # Hash equality is only a filter - the slice comparison is the proof.
+        if window_hash == pattern_hash and text[start:start + m] == pattern:
+            hits.append(start)
+
+        if start + m < n:                     # roll the window one step right
+            window_hash = (
+                (window_hash - ord(text[start]) * high_order) * base
+                + ord(text[start + m])
+            ) % modulus
+            # Python's % always returns a non-negative result, so no fix-up is
+            # needed here. C, C++, Go and JavaScript all need one.
+
+    return hits
+
+
+def longest_duplicate_substring(s: str) -> str:
+    """The longest substring appearing at least twice. O(n log n) expected.
+
+    The payoff for having a rolling hash. The key observation is MONOTONICITY:
+    if a duplicate of length L exists, so does one of every length below L
+    (any prefix of it). That makes the answer binary-searchable.
+
+    For each candidate length, hash every window of that length and look for a
+    repeat - O(n) per check with a rolling hash, O(log n) checks.
+
+    Hashes are stored with their positions so a collision can be resolved by
+    comparing the actual substrings, keeping the result exact.
+    """
+    n = len(s)
+    base, modulus = 256, 1_000_000_007
+
+    def duplicate_of_length(length: int) -> str:
+        if length == 0:
+            return ""
+        high_order = pow(base, length - 1, modulus)
+        seen: dict[int, list[int]] = {}
+
+        window_hash = 0
+        for i in range(length):
+            window_hash = (window_hash * base + ord(s[i])) % modulus
+
+        for start in range(n - length + 1):
+            for other in seen.get(window_hash, ()):     # verify, never trust
+                if s[other:other + length] == s[start:start + length]:
+                    return s[start:start + length]
+            seen.setdefault(window_hash, []).append(start)
+
+            if start + length < n:
+                window_hash = (
+                    (window_hash - ord(s[start]) * high_order) * base
+                    + ord(s[start + length])
+                ) % modulus
+        return ""
+
+    best = ""
+    low, high = 1, n - 1
+    while low <= high:                        # binary search on the LENGTH
+        mid = (low + high) // 2
+        found = duplicate_of_length(mid)
+        if found:
+            best = found
+            low = mid + 1                     # try longer
+        else:
+            high = mid - 1                    # too long, try shorter
+    return best
+
+
 # ============================================================================
 # 7. Everyday transformations
 # ============================================================================
@@ -272,7 +394,50 @@ def demo() -> None:
     assert longest_common_prefix(["flower", "flow", "flight"]) == "fl"
     assert longest_common_prefix(["dog", "car"]) == ""
 
+    # --- Rabin-Karp ----------------------------------------------------------
+    assert rabin_karp_search("abracadabra", "abra") == [0, 7]
+    assert rabin_karp_search("aaaa", "aa") == [0, 1, 2]     # overlapping
+    assert rabin_karp_search("abc", "d") == []
+    assert rabin_karp_search("abc", "") == []               # empty pattern
+    assert rabin_karp_search("ab", "abc") == []             # pattern too long
+    assert rabin_karp_search("aaa", "aaa") == [0]           # exact fit
+
+    # Against naive search AND KMP, on a two-letter alphabet so that windows
+    # collide constantly and the verification step actually gets exercised.
+    random.seed(4)
+    for _ in range(300):
+        text = "".join(random.choice("ab") for _ in range(random.randint(0, 40)))
+        pattern = "".join(random.choice("ab") for _ in range(random.randint(1, 5)))
+        expected = naive_search(text, pattern)
+        assert rabin_karp_search(text, pattern) == expected
+        assert kmp_search(text, pattern) == expected
+
+    # A tiny modulus forces genuine hash collisions - the verification step is
+    # the only thing keeping the answer correct here.
+    for _ in range(200):
+        text = "".join(random.choice("abc") for _ in range(random.randint(0, 30)))
+        pattern = "".join(random.choice("abc") for _ in range(random.randint(1, 4)))
+        assert (rabin_karp_search(text, pattern, base=4, modulus=7)
+                == naive_search(text, pattern))
+
+    assert longest_duplicate_substring("banana") == "ana"
+    assert longest_duplicate_substring("abcd") == ""        # nothing repeats
+    assert longest_duplicate_substring("aaaa") == "aaa"
+    assert longest_duplicate_substring("") == ""
+
+    # Against an O(n^3) brute force over every pair of substrings.
+    for _ in range(60):
+        s = "".join(random.choice("abc") for _ in range(random.randint(0, 18)))
+        expected_length = 0
+        for length in range(1, len(s)):
+            windows = [s[i:i + length] for i in range(len(s) - length + 1)]
+            if len(set(windows)) < len(windows):
+                expected_length = length
+        assert len(longest_duplicate_substring(s)) == expected_length
+
     print("04-Strings (Python): all checks passed")
+    print("  Rabin-Karp cross-checked against naive search and KMP, including")
+    print("  with a deliberately tiny modulus that forces hash collisions")
 
 
 if __name__ == "__main__":

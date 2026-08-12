@@ -74,6 +74,41 @@ Push into an array, `join("")` at the end.
 ### e. Pattern matching - naive vs KMP
 Naive is `O(n * m)`; KMP is `O(n + m)` using the LPS table.
 
+### f. Rabin-Karp - the rolling hash
+
+A different bargain from KMP. Hash the pattern once, slide a window over the
+text keeping its hash in `O(1)` per step, and only compare characters when the
+hashes agree.
+
+```text
+hash("abc") = (a*B^2 + b*B^1 + c*B^0) mod M
+
+roll one step:  new = (old - leading * B^(m-1)) * B + trailing   (mod M)
+```
+
+Precomputing `B^(m-1)` is what makes the roll constant time.
+
+> **The verification is not optional.** Two different strings can share a hash.
+> On a hash match the characters must still be compared. A hash equality is a
+> *cheap filter*, never a proof - skip that step and the function silently
+> returns wrong answers.
+
+Expected `O(n + m)`, worst case `O(n * m)` under engineered collisions. So why
+use it when KMP is worst-case linear? Because the rolling hash **generalises**
+where KMP does not:
+
+| Task | Why Rabin-Karp |
+|------|----------------|
+| Search for many patterns at once | hash them all into one set, still one pass |
+| 2-D pattern matching in a grid | roll horizontally, then vertically |
+| **Longest duplicate substring** | binary search the length, hash every window |
+| Plagiarism / rsync-style diffing | compare block fingerprints, not blocks |
+
+The longest-duplicate-substring trick is worth knowing on its own: if a repeat
+of length `L` exists then so does one of every shorter length, so the answer is
+**binary-searchable** - `O(n log n)` overall.
+
+
 ---
 
 ## 5. Methods worth memorising
@@ -114,6 +149,8 @@ s.normalize("NFC")              // canonicalise accents before comparing
 | `compress` | `O(n)` | `O(n)` |
 | `naiveSearch` | `O(n * m)` | `O(1)` |
 | `kmpSearch` | `O(n + m)` | `O(m)` |
+| `rabinKarpSearch` | `O(n + m)` expected | `O(1)` |
+| `longestDuplicateSubstring` | `O(n log n)` expected | `O(n)` |
 | `groupAnagrams` | `O(n * k)` | `O(n * k)` |
 
 ## Run the code

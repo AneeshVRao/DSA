@@ -222,6 +222,143 @@ export function kmpSearch(text, pattern) {
   return hits;
 }
 
+/**
+ * All start indices of `pattern` in `text`. O(n + m) expected, O(1) space.
+ *
+ * KMP avoids re-scanning by remembering prefix structure. Rabin-Karp takes a
+ * different route: HASH the pattern once, slide a window over the text keeping
+ * its hash in `O(1)` per step, and only compare characters when hashes agree.
+ *
+ * **The rolling hash.** Treat the window as a base-B number modulo a prime:
+ *
+ *     hash("abc") = (a * B^2 + b * B^1 + c * B^0) mod M
+ *
+ * Sliding one character right is three operations, not m:
+ *
+ *     new = (old - leading * B^(m-1)) * B + trailing        (all mod M)
+ *
+ * Removing the leading digit is why `B^(m-1)` is precomputed - recomputing it
+ * inside the loop would make the whole thing `O(n log m)`.
+ *
+ * **The verification is not optional.** Different strings can share a hash. On
+ * a hash match the characters must still be compared, or the function silently
+ * returns wrong positions. Hash equality is a CHEAP FILTER, never a proof.
+ *
+ * **JavaScript specific, twice over:**
+ *   - `%` on a negative left operand returns a negative result (it is
+ *     remainder, not modulo), so the subtraction needs a `+ modulus` fix-up.
+ *   - `hash * base` with a 1e9 modulus reaches ~2.6e11, and rolling that into
+ *     the next step exceeds `Number.MAX_SAFE_INTEGER`. **BigInt** keeps it
+ *     exact. A smaller modulus would fit in a Number but collide far more.
+ *
+ * Expected `O(n + m)`; worst case `O(n * m)` if an adversary engineers
+ * collisions. Worth it over KMP because the rolling hash generalises: many
+ * patterns at once, 2-D grid matching, longest duplicate substring, rsync.
+ */
+export function rabinKarpSearch(text, pattern, base = 256n, modulus = 1000000007n) {
+  const n = text.length;
+  const m = pattern.length;
+  if (m === 0 || m > n) return [];
+
+  base = BigInt(base);
+  modulus = BigInt(modulus);
+
+  // B^(m-1) mod M - the weight of the character leaving the window.
+  let highOrder = 1n;
+  for (let i = 0; i < m - 1; i++) highOrder = (highOrder * base) % modulus;
+
+  let patternHash = 0n;
+  let windowHash = 0n;
+  for (let i = 0; i < m; i++) {
+    patternHash = (patternHash * base + BigInt(pattern.charCodeAt(i))) % modulus;
+    windowHash = (windowHash * base + BigInt(text.charCodeAt(i))) % modulus;
+  }
+
+  const hits = [];
+  for (let start = 0; start + m <= n; start++) {
+    // Hash equality is only a filter - the slice comparison is the proof.
+    if (windowHash === patternHash && text.slice(start, start + m) === pattern) {
+      hits.push(start);
+    }
+
+    if (start + m < n) {
+      // roll the window one step right
+      const leaving = (BigInt(text.charCodeAt(start)) * highOrder) % modulus;
+      windowHash = (windowHash - leaving) % modulus;
+      if (windowHash < 0n) windowHash += modulus; // % is remainder, not modulo
+      windowHash = (windowHash * base + BigInt(text.charCodeAt(start + m))) % modulus;
+    }
+  }
+  return hits;
+}
+
+/**
+ * The longest substring appearing at least twice. O(n log n) expected.
+ *
+ * The payoff for having a rolling hash. The key observation is MONOTONICITY:
+ * if a duplicate of length L exists, so does one of every shorter length (any
+ * prefix of it). That makes the answer binary-searchable.
+ *
+ * For each candidate length, hash every window and look for a repeat - `O(n)`
+ * per check with a rolling hash, `O(log n)` checks.
+ *
+ * Hashes are stored with their positions so a collision is resolved by
+ * comparing the real substrings, keeping the result exact.
+ */
+export function longestDuplicateSubstring(s) {
+  const n = s.length;
+  const base = 256n;
+  const modulus = 1000000007n;
+
+  const duplicateOfLength = (length) => {
+    if (length === 0) return "";
+    let highOrder = 1n;
+    for (let i = 0; i < length - 1; i++) highOrder = (highOrder * base) % modulus;
+
+    const seen = new Map();
+    let windowHash = 0n;
+    for (let i = 0; i < length; i++) {
+      windowHash = (windowHash * base + BigInt(s.charCodeAt(i))) % modulus;
+    }
+
+    for (let start = 0; start + length <= n; start++) {
+      for (const other of seen.get(windowHash) ?? []) {
+        // verify, never trust
+        if (s.slice(other, other + length) === s.slice(start, start + length)) {
+          return s.slice(start, start + length);
+        }
+      }
+      if (!seen.has(windowHash)) seen.set(windowHash, []);
+      seen.get(windowHash).push(start);
+
+      if (start + length < n) {
+        const leaving = (BigInt(s.charCodeAt(start)) * highOrder) % modulus;
+        windowHash = (windowHash - leaving) % modulus;
+        if (windowHash < 0n) windowHash += modulus;
+        windowHash =
+          (windowHash * base + BigInt(s.charCodeAt(start + length))) % modulus;
+      }
+    }
+    return "";
+  };
+
+  let best = "";
+  let low = 1;
+  let high = n - 1;
+  while (low <= high) {
+    // binary search on the LENGTH
+    const mid = Math.floor((low + high) / 2);
+    const found = duplicateOfLength(mid);
+    if (found) {
+      best = found;
+      low = mid + 1; // try longer
+    } else {
+      high = mid - 1; // too long, try shorter
+    }
+  }
+  return best;
+}
+
 // ============================================================================
 // 7. Everyday transformations
 // ============================================================================
@@ -291,7 +428,67 @@ function demo() {
   assert.equal(longestCommonPrefix(["flower", "flow", "flight"]), "fl");
   assert.equal(longestCommonPrefix(["dog", "car"]), "");
 
+  // --- Rabin-Karp -----------------------------------------------------------
+  assert.deepEqual(rabinKarpSearch("abracadabra", "abra"), [0, 7]);
+  assert.deepEqual(rabinKarpSearch("aaaa", "aa"), [0, 1, 2]); // overlapping
+  assert.deepEqual(rabinKarpSearch("abc", "d"), []);
+  assert.deepEqual(rabinKarpSearch("abc", ""), []); // empty pattern
+  assert.deepEqual(rabinKarpSearch("ab", "abc"), []); // pattern too long
+  assert.deepEqual(rabinKarpSearch("aaa", "aaa"), [0]); // exact fit
+
+  // Deterministic PRNG so a failure is always reproducible.
+  let seed = 4;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const randInt = (lo, hi) => lo + Math.floor(random() * (hi - lo + 1));
+  const randomString = (length, alphabet) =>
+    Array.from({ length }, () => alphabet[randInt(0, alphabet.length - 1)]).join("");
+
+  // Against naive search AND KMP, on a two-letter alphabet so that windows
+  // collide constantly and the verification step actually gets exercised.
+  for (let trial = 0; trial < 300; trial++) {
+    const text = randomString(randInt(0, 40), "ab");
+    const pattern = randomString(randInt(1, 5), "ab");
+    const expected = naiveSearch(text, pattern);
+    assert.deepEqual(rabinKarpSearch(text, pattern), expected);
+    assert.deepEqual(kmpSearch(text, pattern), expected);
+  }
+
+  // A tiny modulus forces genuine hash collisions - the verification step is
+  // the only thing keeping the answer correct here.
+  for (let trial = 0; trial < 200; trial++) {
+    const text = randomString(randInt(0, 30), "abc");
+    const pattern = randomString(randInt(1, 4), "abc");
+    assert.deepEqual(
+      rabinKarpSearch(text, pattern, 4n, 7n),
+      naiveSearch(text, pattern),
+    );
+  }
+
+  assert.equal(longestDuplicateSubstring("banana"), "ana");
+  assert.equal(longestDuplicateSubstring("abcd"), ""); // nothing repeats
+  assert.equal(longestDuplicateSubstring("aaaa"), "aaa");
+  assert.equal(longestDuplicateSubstring(""), "");
+
+  // Against an O(n^3) brute force over every pair of substrings.
+  for (let trial = 0; trial < 60; trial++) {
+    const s = randomString(randInt(0, 18), "abc");
+    let expectedLength = 0;
+    for (let length = 1; length < s.length; length++) {
+      const windows = [];
+      for (let i = 0; i + length <= s.length; i++) windows.push(s.slice(i, i + length));
+      if (new Set(windows).size < windows.length) expectedLength = length;
+    }
+    assert.equal(longestDuplicateSubstring(s).length, expectedLength);
+  }
+
   console.log("04-Strings (JavaScript): all checks passed");
+  console.log(
+    "  Rabin-Karp cross-checked against naive search and KMP, including\n" +
+      "  with a deliberately tiny modulus that forces hash collisions",
+  );
 }
 
 demo();

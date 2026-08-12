@@ -18,6 +18,15 @@ pointers, frequency count, or sliding window?
 | 11 | Integer to Roman | Greedy over a value/symbol table. | [LeetCode 12](https://leetcode.com/problems/integer-to-roman/) |
 | 12 | Anagram (GfG) | Same as #2, different judge. | [GfG](https://www.geeksforgeeks.org/problems/anagram-1587115620/1) |
 
+## Rolling hash
+| Problem | Hint | Link |
+|---------|------|------|
+| Longest Duplicate Substring | Binary search the length, hash every window of it. | [LeetCode 1044](https://leetcode.com/problems/longest-duplicate-substring/) |
+| Repeated DNA Sequences | Fixed window of 10 - a rolling hash or a set of slices. | [LeetCode 187](https://leetcode.com/problems/repeated-dna-sequences/) |
+| Longest Happy Prefix | Prefix == suffix: KMP's LPS, or hash both ends. | [LeetCode 1392](https://leetcode.com/problems/longest-happy-prefix/) |
+| Distinct Echo Substrings | Hash to compare halves in O(1). | [LeetCode 1316](https://leetcode.com/problems/distinct-echo-substrings/) |
+| Rabin-Karp / Search Pattern | The reference implementation - and verify on hash match. | [GfG](https://www.geeksforgeeks.org/problems/search-pattern-rabin-karp-algorithm--141631/1) |
+
 ## Self-check before moving on
 
 - [ ] I `reserve()` before building a string in a loop.
@@ -25,3 +34,4 @@ pointers, frequency count, or sliding window?
 - [ ] I cast to `unsigned char` before calling `tolower`/`isalnum`.
 - [ ] I know `substr` allocates, and avoid it inside loops.
 - [ ] I can write the LPS table for KMP from memory.
+- [ ] I never trust a hash match without comparing the characters.

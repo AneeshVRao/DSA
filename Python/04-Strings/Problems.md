@@ -18,6 +18,15 @@ two pointers, a frequency count, or a sliding window?
 | 11 | Valid Parentheses | A stack - preview of chapter 06. | [LeetCode 20](https://leetcode.com/problems/valid-parentheses/) |
 | 12 | Roman to Integer | Right to left; subtract when a smaller value precedes a larger. | [LeetCode 13](https://leetcode.com/problems/roman-to-integer/) |
 
+## Rolling hash
+| Problem | Hint | Link |
+|---------|------|------|
+| Longest Duplicate Substring | Binary search the length, hash every window of it. | [LeetCode 1044](https://leetcode.com/problems/longest-duplicate-substring/) |
+| Repeated DNA Sequences | Fixed window of 10 - a rolling hash or a set of slices. | [LeetCode 187](https://leetcode.com/problems/repeated-dna-sequences/) |
+| Longest Happy Prefix | Prefix == suffix: KMP's LPS, or hash both ends. | [LeetCode 1392](https://leetcode.com/problems/longest-happy-prefix/) |
+| Distinct Echo Substrings | Hash to compare halves in O(1). | [LeetCode 1316](https://leetcode.com/problems/distinct-echo-substrings/) |
+| Rabin-Karp / Search Pattern | The reference implementation - and verify on hash match. | [GfG](https://www.geeksforgeeks.org/problems/search-pattern-rabin-karp-algorithm--141631/1) |
+
 ## Self-check before moving on
 
 - [ ] I build strings with `"".join(parts)`, never `+=` in a loop.
@@ -25,3 +34,4 @@ two pointers, a frequency count, or a sliding window?
 - [ ] I use a 26-slot list for lowercase-only frequency problems.
 - [ ] I can explain what `lps[i]` means in KMP.
 - [ ] I remember that slicing a string copies it.
+- [ ] I never trust a hash match without comparing the characters.

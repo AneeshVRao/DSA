@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -266,6 +267,137 @@ func KMPSearch(text, pattern string) []int {
 	return hits
 }
 
+// RabinKarpSearch returns every start index of pattern in text.
+// O(n + m) expected, O(1) space.
+//
+// KMP avoids re-scanning by remembering prefix structure. Rabin-Karp takes a
+// different route: HASH the pattern once, slide a window over the text keeping
+// its hash in O(1) per step, and only compare characters when hashes agree.
+//
+// THE ROLLING HASH. Treat the window as a base-B number modulo a prime:
+//
+//	hash("abc") = (a * B^2 + b * B^1 + c * B^0) mod M
+//
+// Sliding one character right is three operations, not m:
+//
+//	new = (old - leading * B^(m-1)) * B + trailing        (all mod M)
+//
+// Removing the leading digit is why B^(m-1) is precomputed - recomputing it
+// inside the loop would make the whole thing O(n log m).
+//
+// THE VERIFICATION IS NOT OPTIONAL. Different strings can share a hash. On a
+// hash match the bytes must still be compared, or the function silently
+// returns wrong positions. Hash equality is a CHEAP FILTER, never a proof.
+//
+// GO SPECIFIC: Go's % follows the sign of the DIVIDEND, so a negative left
+// operand gives a negative result (unlike Python). The subtraction therefore
+// needs an explicit fix-up back into [0, M).
+//
+// Expected O(n + m); worst case O(n * m) if an adversary engineers collisions.
+// Worth it over KMP because the rolling hash generalises: many patterns at
+// once, 2-D grid matching, longest duplicate substring, rsync-style diffing.
+func RabinKarpSearch(text, pattern string, base, modulus int) []int {
+	n, m := len(text), len(pattern)
+	if m == 0 || m > n {
+		return nil
+	}
+
+	// B^(m-1) mod M - the weight of the byte leaving the window.
+	highOrder := 1
+	for i := 0; i < m-1; i++ {
+		highOrder = highOrder * base % modulus
+	}
+
+	patternHash, windowHash := 0, 0
+	for i := 0; i < m; i++ {
+		patternHash = (patternHash*base + int(pattern[i])) % modulus
+		windowHash = (windowHash*base + int(text[i])) % modulus
+	}
+
+	var hits []int
+	for start := 0; start+m <= n; start++ {
+		// Hash equality is only a filter - the slice comparison is the proof.
+		if windowHash == patternHash && text[start:start+m] == pattern {
+			hits = append(hits, start)
+		}
+
+		if start+m < n { // roll the window one step right
+			leaving := int(text[start]) % modulus * highOrder % modulus
+			windowHash = (windowHash - leaving) % modulus
+			if windowHash < 0 {
+				windowHash += modulus // % follows the dividend's sign
+			}
+			windowHash = (windowHash*base + int(text[start+m])) % modulus
+		}
+	}
+	return hits
+}
+
+// LongestDuplicateSubstring returns the longest substring appearing at least
+// twice. O(n log n) expected.
+//
+// The payoff for having a rolling hash. The key observation is MONOTONICITY:
+// if a duplicate of length L exists, so does one of every shorter length (any
+// prefix of it). That makes the answer binary-searchable.
+//
+// For each candidate length, hash every window and look for a repeat - O(n)
+// per check with a rolling hash, O(log n) checks.
+//
+// Hashes are stored with their positions so a collision is resolved by
+// comparing the real substrings, keeping the result exact.
+func LongestDuplicateSubstring(s string) string {
+	n := len(s)
+	const base, modulus = 256, 1000000007
+
+	duplicateOfLength := func(length int) string {
+		if length == 0 {
+			return ""
+		}
+		highOrder := 1
+		for i := 0; i < length-1; i++ {
+			highOrder = highOrder * base % modulus
+		}
+
+		seen := map[int][]int{}
+		windowHash := 0
+		for i := 0; i < length; i++ {
+			windowHash = (windowHash*base + int(s[i])) % modulus
+		}
+
+		for start := 0; start+length <= n; start++ {
+			for _, other := range seen[windowHash] { // verify, never trust
+				if s[other:other+length] == s[start:start+length] {
+					return s[start : start+length]
+				}
+			}
+			seen[windowHash] = append(seen[windowHash], start)
+
+			if start+length < n {
+				leaving := int(s[start]) % modulus * highOrder % modulus
+				windowHash = (windowHash - leaving) % modulus
+				if windowHash < 0 {
+					windowHash += modulus
+				}
+				windowHash = (windowHash*base + int(s[start+length])) % modulus
+			}
+		}
+		return ""
+	}
+
+	best := ""
+	low, high := 1, n-1
+	for low <= high { // binary search on the LENGTH
+		mid := (low + high) / 2
+		if found := duplicateOfLength(mid); found != "" {
+			best = found
+			low = mid + 1 // try longer
+		} else {
+			high = mid - 1 // too long, try shorter
+		}
+	}
+	return best
+}
+
 // ============================================================================
 // 7. Everyday transformations
 // ============================================================================
@@ -361,5 +493,72 @@ func main() {
 	assert(LongestCommonPrefix([]string{"flower", "flow", "flight"}) == "fl", "LCP")
 	assert(LongestCommonPrefix([]string{"dog", "car"}) == "", "no LCP")
 
+	// --- Rabin-Karp -----------------------------------------------------------
+	const base, mod = 256, 1000000007
+	assert(equalInts(RabinKarpSearch("abracadabra", "abra", base, mod), []int{0, 7}),
+		"rabin-karp finds both occurrences")
+	assert(equalInts(RabinKarpSearch("aaaa", "aa", base, mod), []int{0, 1, 2}),
+		"overlapping matches")
+	assert(len(RabinKarpSearch("abc", "d", base, mod)) == 0, "no match")
+	assert(len(RabinKarpSearch("abc", "", base, mod)) == 0, "empty pattern")
+	assert(len(RabinKarpSearch("ab", "abc", base, mod)) == 0, "pattern too long")
+	assert(equalInts(RabinKarpSearch("aaa", "aaa", base, mod), []int{0}), "exact fit")
+
+	// Against naive search AND KMP, on a two-letter alphabet so that windows
+	// collide constantly and the verification step actually gets exercised.
+	rng := rand.New(rand.NewSource(4))
+	randomString := func(length int, alphabet string) string {
+		out := make([]byte, length)
+		for i := range out {
+			out[i] = alphabet[rng.Intn(len(alphabet))]
+		}
+		return string(out)
+	}
+
+	for trial := 0; trial < 300; trial++ {
+		text := randomString(rng.Intn(41), "ab")
+		pattern := randomString(rng.Intn(5)+1, "ab")
+		expected := NaiveSearch(text, pattern)
+		assert(equalInts(RabinKarpSearch(text, pattern, base, mod), expected),
+			"rabin-karp matches naive search")
+		assert(equalInts(KMPSearch(text, pattern), expected),
+			"kmp matches naive search")
+	}
+
+	// A tiny modulus forces genuine hash collisions - the verification step is
+	// the only thing keeping the answer correct here.
+	for trial := 0; trial < 200; trial++ {
+		text := randomString(rng.Intn(31), "abc")
+		pattern := randomString(rng.Intn(4)+1, "abc")
+		assert(equalInts(RabinKarpSearch(text, pattern, 4, 7),
+			NaiveSearch(text, pattern)), "verification survives collisions")
+	}
+
+	assert(LongestDuplicateSubstring("banana") == "ana", "longest duplicate")
+	assert(LongestDuplicateSubstring("abcd") == "", "nothing repeats")
+	assert(LongestDuplicateSubstring("aaaa") == "aaa", "overlapping duplicate")
+	assert(LongestDuplicateSubstring("") == "", "empty string")
+
+	// Against an O(n^3) brute force over every pair of substrings.
+	for trial := 0; trial < 60; trial++ {
+		s := randomString(rng.Intn(19), "abc")
+		expectedLength := 0
+		for length := 1; length < len(s); length++ {
+			windows := map[string]struct{}{}
+			count := 0
+			for i := 0; i+length <= len(s); i++ {
+				windows[s[i:i+length]] = struct{}{}
+				count++
+			}
+			if len(windows) < count {
+				expectedLength = length
+			}
+		}
+		assert(len(LongestDuplicateSubstring(s)) == expectedLength,
+			"longest duplicate matches brute force")
+	}
+
 	fmt.Println("04-Strings (Go): all checks passed")
+	fmt.Println("  Rabin-Karp cross-checked against naive search and KMP, including")
+	fmt.Println("  with a deliberately tiny modulus that forces hash collisions")
 }
