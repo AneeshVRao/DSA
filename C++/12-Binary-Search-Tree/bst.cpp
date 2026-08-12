@@ -7,7 +7,11 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
+#include <numeric>
+#include <random>
 #include <set>
 #include <vector>
 
@@ -325,6 +329,273 @@ int treeHeight(TreeNode* node) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 6. AVL - a BST that keeps itself balanced
+// ============================================================================
+
+// A BST node that also caches its own subtree height.
+//
+// The height must be STORED, not computed. Recomputing it would make every
+// insert O(n); cached, it updates in O(1) as the recursion unwinds.
+struct AVLNode {
+    int val;
+    AVLNode* left = nullptr;
+    AVLNode* right = nullptr;
+    int height = 1;                      // a leaf has height 1
+
+    explicit AVLNode(int v) : val(v) {}
+};
+
+// AVLTree is a self-balancing BST. Every operation is O(log n) GUARANTEED.
+//
+// THE PROBLEM IT SOLVES. A plain BST is O(log n) only if the data arrives in a
+// lucky order. Insert 1, 2, 3, 4, 5 in order and every node becomes a right
+// child - the tree degenerates into a linked list and search is O(n). Sorted
+// input is not a pathological case, it is the single most common one.
+//
+// THE INVARIANT. For every node,
+//
+//     balance = height(left) - height(right)   is in {-1, 0, +1}
+//
+// That one constraint forces height <= 1.44 * log2(n). (Sketch: let N(h) be the
+// fewest nodes in an AVL tree of height h. Then N(h) = 1 + N(h-1) + N(h-2) -
+// the Fibonacci recurrence - so N(h) grows exponentially and h is logarithmic.)
+//
+// THE FOUR CASES. After an insert or delete one node may reach a balance of
+// +/-2. Which rotation fixes it depends on WHERE the offending subtree sits:
+//
+//     LL  balance > 1,  went left-left    -> rotate right
+//     RR  balance < -1, went right-right  -> rotate left
+//     LR  balance > 1,  went left-right   -> rotate left on the child,
+//                                            then right on the node
+//     RL  balance < -1, went right-left   -> rotate right on the child,
+//                                            then left on the node
+//
+// LR and RL are not new operations - they are the single rotations applied
+// twice. The first straightens the zig-zag into a line; the second is then the
+// simple case.
+//
+// A rotation is O(1): three pointer writes and two height updates. Only the
+// LOWEST unbalanced node needs rotating on insert - one rotation restores the
+// whole tree, because it also restores the subtree's original height. Delete is
+// harder: it can SHORTEN a subtree, so rebalancing may cascade to the root, up
+// to O(log n) rotations.
+//
+// AVL vs red-black: AVL is more strictly balanced (faster lookups), red-black
+// rotates less on write (faster inserts). Which is why std::map, Java TreeMap
+// and the Linux kernel all use red-black, while read-heavy database indexes
+// lean AVL.
+class AVLTree {
+   public:
+    AVLTree() = default;
+    ~AVLTree() { destroy(root_); }
+
+    // Rule of three: this class owns raw pointers, so a default copy would
+    // double-free. Deleted rather than implemented - nothing here needs it.
+    AVLTree(const AVLTree&) = delete;
+    AVLTree& operator=(const AVLTree&) = delete;
+
+    // Insert a value. O(log n) guaranteed. Returns false if already present.
+    bool insert(int value) {
+        bool inserted = false;
+        root_ = insertInto(root_, value, inserted);
+        if (inserted) size_++;
+        return inserted;
+    }
+
+    // Delete a value. O(log n) guaranteed. Returns false if absent.
+    //
+    // The three BST delete cases are unchanged - what AVL adds is the rebalance
+    // as the recursion unwinds. Unlike insert, deletion can shorten a subtree,
+    // so one rotation may not be enough and the fixing can cascade.
+    bool erase(int value) {
+        bool removed = false;
+        root_ = eraseFrom(root_, value, removed);
+        if (removed) size_--;
+        return removed;
+    }
+
+    // O(log n) guaranteed - the whole point of the structure.
+    bool contains(int value) const {
+        AVLNode* node = root_;
+        while (node) {
+            if (value == node->val) return true;
+            node = value < node->val ? node->left : node->right;
+        }
+        return false;
+    }
+
+    // Sorted values. O(n).
+    vector<int> inorder() const {
+        vector<int> out;
+        vector<AVLNode*> stack;
+        AVLNode* node = root_;
+        while (!stack.empty() || node) {
+            while (node) {
+                stack.push_back(node);
+                node = node->left;
+            }
+            node = stack.back();
+            stack.pop_back();
+            out.push_back(node->val);
+            node = node->right;
+        }
+        return out;
+    }
+
+    int height() const { return heightOf(root_); }
+    size_t size() const { return size_; }
+
+    // Verify the invariant everywhere - used by the tests, not by users.
+    bool isBalanced() const { return checkBalanced(root_); }
+
+   private:
+    AVLNode* root_ = nullptr;
+    size_t size_ = 0;
+
+    // Height of a possibly-absent subtree. An empty tree has height 0.
+    static int heightOf(AVLNode* node) { return node ? node->height : 0; }
+
+    static void updateHeight(AVLNode* node) {
+        node->height = 1 + max(heightOf(node->left), heightOf(node->right));
+    }
+
+    // Left height minus right height. Positive means left-heavy.
+    static int balanceOf(AVLNode* node) {
+        return node ? heightOf(node->left) - heightOf(node->right) : 0;
+    }
+
+    /* Left-heavy fix. O(1).  A block comment, because a // line ending in a
+     * backslash is a line continuation and would swallow the next line.
+     *
+     *         node                 pivot
+     *        /    \                /     \
+     *     pivot    C      ->      A      node
+     *     /   \                          /    \
+     *    A     B                        B      C
+     *
+     * B moves from pivot's right to node's left. Every value in B is greater
+     * than pivot and less than node, so it is legal in either position - which
+     * is exactly why a rotation preserves the BST ordering.
+     *
+     * Update pivot's height AFTER node's: node is now pivot's child, so its
+     * height has to be settled first.
+     */
+    static AVLNode* rotateRight(AVLNode* node) {
+        AVLNode* pivot = node->left;
+        node->left = pivot->right;
+        pivot->right = node;
+
+        updateHeight(node);                  // the lower node first
+        updateHeight(pivot);
+        return pivot;                        // the new subtree root
+    }
+
+    // Right-heavy fix - the exact mirror of rotateRight. O(1).
+    static AVLNode* rotateLeft(AVLNode* node) {
+        AVLNode* pivot = node->right;
+        node->right = pivot->left;
+        pivot->left = node;
+
+        updateHeight(node);
+        updateHeight(pivot);
+        return pivot;
+    }
+
+    // Restore the invariant at one node. Returns the new subtree root.
+    static AVLNode* rebalance(AVLNode* node) {
+        updateHeight(node);
+        int balance = balanceOf(node);
+
+        if (balance > 1) {                         // left-heavy
+            if (balanceOf(node->left) < 0) {       // LR: straighten first
+                node->left = rotateLeft(node->left);
+            }
+            return rotateRight(node);              // LL
+        }
+        if (balance < -1) {                        // right-heavy
+            if (balanceOf(node->right) > 0) {      // RL: straighten first
+                node->right = rotateRight(node->right);
+            }
+            return rotateLeft(node);               // RR
+        }
+        return node;                               // already balanced
+    }
+
+    static AVLNode* insertInto(AVLNode* node, int value, bool& inserted) {
+        if (!node) {
+            inserted = true;
+            return new AVLNode(value);
+        }
+        if (value < node->val) {
+            node->left = insertInto(node->left, value, inserted);
+        } else if (value > node->val) {
+            node->right = insertInto(node->right, value, inserted);
+        } else {
+            return node;                     // duplicate: nothing changes
+        }
+        return rebalance(node);              // unwinding: fix on the way up
+    }
+
+    // Detach the leftmost node, rebalancing on the way back up. The detached
+    // node is handed back through `removed` for the caller to reuse or delete.
+    static AVLNode* eraseMin(AVLNode* node, AVLNode*& removed) {
+        if (!node->left) {
+            removed = node;
+            return node->right;
+        }
+        node->left = eraseMin(node->left, removed);
+        return rebalance(node);
+    }
+
+    static AVLNode* eraseFrom(AVLNode* node, int value, bool& removed) {
+        if (!node) return nullptr;
+
+        if (value < node->val) {
+            node->left = eraseFrom(node->left, value, removed);
+        } else if (value > node->val) {
+            node->right = eraseFrom(node->right, value, removed);
+        } else {
+            removed = true;
+            if (!node->left) {               // 0 or 1 child: splice it out
+                AVLNode* child = node->right;
+                delete node;
+                return child;
+            }
+            if (!node->right) {
+                AVLNode* child = node->left;
+                delete node;
+                return child;
+            }
+
+            // Two children: take the in-order successor's value, then remove
+            // that successor node from the right subtree.
+            AVLNode* successor = nullptr;
+            node->right = eraseMin(node->right, successor);
+            node->val = successor->val;
+            delete successor;
+        }
+        return rebalance(node);
+    }
+
+    static bool checkBalanced(AVLNode* node) {
+        if (!node) return true;
+        if (abs(balanceOf(node)) > 1) return false;
+        // The cached height must also be honest, or the balance is a lie.
+        if (node->height != 1 + max(heightOf(node->left), heightOf(node->right))) {
+            return false;
+        }
+        return checkBalanced(node->left) && checkBalanced(node->right);
+    }
+
+    static void destroy(AVLNode* node) {
+        if (!node) return;
+        destroy(node->left);
+        destroy(node->right);
+        delete node;
+    }
+};
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -418,6 +689,84 @@ int main() {
     assert(*s.begin() == 1 && *s.rbegin() == 10);
     assert(*s.lower_bound(4) == 8);           // first >= 4
 
+    // --- AVL ------------------------------------------------------------------
+    // The case a plain BST cannot survive: strictly increasing input.
+    {
+        AVLTree avl;
+        for (int value = 1; value <= 31; value++) avl.insert(value);
+
+        assert(avl.height() == 5);            // log2(32) - actually balanced
+        assert(avl.size() == 31);
+        vector<int> sortedValues(31);
+        iota(sortedValues.begin(), sortedValues.end(), 1);
+        assert(avl.inorder() == sortedValues);
+        assert(avl.isBalanced());
+    }
+
+    // Each of the four rotation cases, in isolation.
+    {
+        AVLTree ll, rr, lr, rl;
+        for (int v : {30, 20, 10}) ll.insert(v);      // left-left
+        for (int v : {10, 20, 30}) rr.insert(v);      // right-right
+        for (int v : {30, 10, 20}) lr.insert(v);      // left-right
+        for (int v : {10, 30, 20}) rl.insert(v);      // right-left
+
+        // All four must end up as the same balanced tree rooted at 20.
+        vector<int> expected{10, 20, 30};
+        for (const AVLTree* tree : {&ll, &rr, &lr, &rl}) {
+            assert(tree->height() == 2);
+            assert(tree->inorder() == expected);
+            assert(tree->isBalanced());
+        }
+    }
+
+    // Duplicates are rejected, and the size stays honest.
+    {
+        AVLTree dup;
+        assert(dup.insert(5));
+        assert(!dup.insert(5));
+        assert(dup.size() == 1);
+        assert(!dup.erase(99));               // absent
+        assert(dup.erase(5) && dup.size() == 0);
+        assert(dup.inorder().empty());
+    }
+
+    // Against std::set, with the invariant re-checked after EVERY operation -
+    // a rotation bug that only shows up mid-sequence would be invisible to an
+    // end-state-only test.
+    {
+        mt19937 rng(12);
+        for (int trial = 0; trial < 60; trial++) {
+            AVLTree tree;
+            set<int> reference;
+
+            for (int step = 0; step < 80; step++) {
+                int value = int(rng() % 41);
+                if (rng() % 100 < 65) {
+                    bool changed = tree.insert(value);
+                    assert(changed == (reference.count(value) == 0));
+                    reference.insert(value);
+                } else {
+                    bool changed = tree.erase(value);
+                    assert(changed == (reference.count(value) == 1));
+                    reference.erase(value);
+                }
+
+                // An in-order walk that comes out sorted IS the BST invariant.
+                assert(tree.inorder() == vector<int>(reference.begin(), reference.end()));
+                assert(tree.isBalanced());    // still within +/-1 everywhere
+                assert(tree.size() == reference.size());
+
+                // The height bound AVL promises: h <= 1.44 * log2(n + 2)
+                if (!reference.empty()) {
+                    assert(tree.height() <= 1.44 * log2(double(reference.size() + 2)));
+                }
+            }
+        }
+    }
+
     cout << "12-Binary-Search-Tree (C++): all checks passed\n";
+    cout << "  AVL invariant re-verified after every one of 4800 random "
+            "insert/delete operations\n";
     return 0;
 }

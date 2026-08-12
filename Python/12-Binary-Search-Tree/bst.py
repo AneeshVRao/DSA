@@ -7,6 +7,9 @@ Run:  python bst.py
 
 from __future__ import annotations
 
+import bisect
+import math
+import random
 from typing import Optional, Sequence
 
 
@@ -319,6 +322,264 @@ def tree_height(root: Optional[TreeNode]) -> int:
 # ============================================================================
 # demo
 # ============================================================================
+# ============================================================================
+# 6. AVL - a BST that keeps itself balanced
+# ============================================================================
+class AVLNode:
+    """A BST node that also caches its own subtree height.
+
+    The height has to be STORED, not computed. Recomputing it would make every
+    insert O(n); cached, it updates in O(1) as the recursion unwinds.
+    """
+
+    __slots__ = ("val", "left", "right", "height")
+
+    def __init__(self, val: int) -> None:
+        self.val = val
+        self.left: Optional[AVLNode] = None
+        self.right: Optional[AVLNode] = None
+        self.height = 1                       # a leaf has height 1
+
+
+class AVLTree:
+    """A self-balancing BST. Every operation is O(log n) GUARANTEED.
+
+    THE PROBLEM IT SOLVES. A plain BST is O(log n) only if the data arrives in
+    a lucky order. Insert 1, 2, 3, 4, 5 in order and every node becomes a right
+    child - the tree degenerates into a linked list and search is O(n). Sorted
+    input is not a pathological case, it is the single most common one.
+
+    THE INVARIANT. For every node,
+
+        balance = height(left) - height(right)   is in {-1, 0, +1}
+
+    That single constraint forces height <= 1.44 * log2(n). (Proof sketch: let
+    N(h) be the fewest nodes in an AVL tree of height h. Then
+    N(h) = 1 + N(h-1) + N(h-2) - the Fibonacci recurrence - so N(h) grows
+    exponentially and h is logarithmic in n.)
+
+    THE FOUR CASES. After an insert or delete, one node may reach a balance of
+    +/-2. Which rotation fixes it depends on WHERE the offending subtree sits:
+
+        LL  balance > 1,  went left-left    -> rotate right
+        RR  balance < -1, went right-right  -> rotate left
+        LR  balance > 1,  went left-right   -> rotate left on the child,
+                                               then right on the node
+        RL  balance < -1, went right-left   -> rotate right on the child,
+                                               then left on the node
+
+    LR and RL are not new operations - they are the single rotations applied
+    twice. The first one turns the zig-zag into a straight line, and the second
+    is then the simple case.
+
+    A rotation is O(1): three pointer writes and two height updates. Only the
+    LOWEST unbalanced node needs rotating on insert - one rotation restores the
+    whole tree, because it also restores the subtree's original height. Delete
+    is the harder case: it can shorten a subtree, so rebalancing may cascade all
+    the way to the root, up to O(log n) rotations.
+
+    AVL vs red-black: AVL is more strictly balanced (faster lookups), red-black
+    rotates less on write (faster inserts). Which is why C++ std::map, Java
+    TreeMap and the Linux kernel all use red-black, while database indexes that
+    are read far more than written tend toward AVL.
+    """
+
+    def __init__(self) -> None:
+        self.root: Optional[AVLNode] = None
+        self.size = 0
+
+    # --- the two primitives -------------------------------------------------
+    @staticmethod
+    def _height(node: Optional[AVLNode]) -> int:
+        """Height of a possibly-absent subtree. An empty tree has height 0."""
+        return node.height if node else 0
+
+    @classmethod
+    def _update_height(cls, node: AVLNode) -> None:
+        node.height = 1 + max(cls._height(node.left), cls._height(node.right))
+
+    @classmethod
+    def _balance(cls, node: Optional[AVLNode]) -> int:
+        """Left height minus right height. Positive means left-heavy."""
+        if node is None:
+            return 0
+        return cls._height(node.left) - cls._height(node.right)
+
+    @classmethod
+    def _rotate_right(cls, node: AVLNode) -> AVLNode:
+        """Left-heavy fix. O(1).
+
+                node                pivot
+               /    \\              /     \\
+            pivot    C     ->     A      node
+            /   \\                        /    \\
+           A     B                      B      C
+
+        B moves from pivot's right to node's left. Every value in B is greater
+        than pivot and less than node, so it is legal in either position - which
+        is exactly why rotation preserves the BST ordering.
+
+        Update pivot's height AFTER node's: node is now pivot's child, so its
+        height must be settled first.
+        """
+        pivot = node.left
+        assert pivot is not None              # the caller checked the balance
+        node.left = pivot.right
+        pivot.right = node
+
+        cls._update_height(node)              # the lower node first
+        cls._update_height(pivot)
+        return pivot                          # the new subtree root
+
+    @classmethod
+    def _rotate_left(cls, node: AVLNode) -> AVLNode:
+        """Right-heavy fix - the exact mirror of _rotate_right. O(1)."""
+        pivot = node.right
+        assert pivot is not None
+        node.right = pivot.left
+        pivot.left = node
+
+        cls._update_height(node)
+        cls._update_height(pivot)
+        return pivot
+
+    @classmethod
+    def _rebalance(cls, node: AVLNode) -> AVLNode:
+        """Restore the invariant at one node. Returns the new subtree root."""
+        cls._update_height(node)
+        balance = cls._balance(node)
+
+        if balance > 1:                       # left-heavy
+            if cls._balance(node.left) < 0:   # LR: straighten the zig-zag first
+                assert node.left is not None
+                node.left = cls._rotate_left(node.left)
+            return cls._rotate_right(node)    # LL
+
+        if balance < -1:                      # right-heavy
+            if cls._balance(node.right) > 0:  # RL: straighten first
+                assert node.right is not None
+                node.right = cls._rotate_right(node.right)
+            return cls._rotate_left(node)     # RR
+
+        return node                           # already balanced
+
+    # --- the public operations ----------------------------------------------
+    def insert(self, value: int) -> bool:
+        """Insert a value. O(log n) guaranteed. False if already present."""
+        inserted = False
+
+        def go(node: Optional[AVLNode]) -> AVLNode:
+            nonlocal inserted
+            if node is None:
+                inserted = True
+                return AVLNode(value)
+            if value < node.val:
+                node.left = go(node.left)
+            elif value > node.val:
+                node.right = go(node.right)
+            else:
+                return node                   # duplicate: nothing changes
+            return self._rebalance(node)      # unwinding: fix on the way up
+
+        self.root = go(self.root)
+        if inserted:
+            self.size += 1
+        return inserted
+
+    def delete(self, value: int) -> bool:
+        """Delete a value. O(log n) guaranteed. False if absent.
+
+        The three BST delete cases are unchanged - what AVL adds is the
+        _rebalance call as the recursion unwinds. Unlike insert, deletion can
+        shorten a subtree, so a single rotation may not be enough and the fixing
+        can cascade all the way to the root.
+        """
+        removed = False
+
+        def go(node: Optional[AVLNode]) -> Optional[AVLNode]:
+            nonlocal removed
+            if node is None:
+                return None
+
+            if value < node.val:
+                node.left = go(node.left)
+            elif value > node.val:
+                node.right = go(node.right)
+            else:
+                removed = True
+                if node.left is None:         # 0 or 1 child: splice it out
+                    return node.right
+                if node.right is None:
+                    return node.left
+
+                # Two children: replace with the in-order successor (the
+                # smallest value on the right), then delete that successor.
+                successor = node.right
+                while successor.left is not None:
+                    successor = successor.left
+                node.val = successor.val
+                node.right = go_delete_min(node.right)
+
+            return self._rebalance(node)
+
+        def go_delete_min(node: Optional[AVLNode]) -> Optional[AVLNode]:
+            """Remove the leftmost node, rebalancing on the way back up."""
+            if node is None:
+                return None
+            if node.left is None:
+                return node.right
+            node.left = go_delete_min(node.left)
+            return self._rebalance(node)
+
+        self.root = go(self.root)
+        if removed:
+            self.size -= 1
+        return removed
+
+    def contains(self, value: int) -> bool:
+        """O(log n) guaranteed - the whole point of the structure."""
+        node = self.root
+        while node is not None:
+            if value == node.val:
+                return True
+            node = node.left if value < node.val else node.right
+        return False
+
+    def inorder(self) -> list[int]:
+        """Sorted values. O(n)."""
+        out: list[int] = []
+        stack: list[AVLNode] = []
+        node = self.root
+        while stack or node:
+            while node:
+                stack.append(node)
+                node = node.left
+            node = stack.pop()
+            out.append(node.val)
+            node = node.right
+        return out
+
+    def height(self) -> int:
+        return self._height(self.root)
+
+    def is_balanced(self) -> bool:
+        """Verify the invariant everywhere - used by the tests, not by users."""
+
+        def check(node: Optional[AVLNode]) -> bool:
+            if node is None:
+                return True
+            if abs(self._balance(node)) > 1:
+                return False
+            # The cached height must also be honest, or the balance is a lie.
+            expected = 1 + max(self._height(node.left), self._height(node.right))
+            if node.height != expected:
+                return False
+            return check(node.left) and check(node.right)
+
+        return check(self.root)
+
+
+# ============================================================================
 def demo() -> None:
     #            8
     #          /   \
@@ -399,7 +660,84 @@ def demo() -> None:
     assert tree_height(balanced) == 3                 # log2(16) - 1
     assert BST(values).height() == 14                 # the degenerate case
 
+    # --- AVL -----------------------------------------------------------------
+    # The case a plain BST cannot survive: strictly increasing input.
+    plain = BST()
+    avl = AVLTree()
+    for value in range(1, 32):
+        plain.insert(value)
+        avl.insert(value)
+
+    # Mind the two conventions: tree_height counts EDGES (empty == -1), while
+    # AVL caches NODE counts (empty == 0, leaf == 1). Both are standard; mixing
+    # them up is a classic off-by-one.
+    assert tree_height(plain.root) == 30        # a linked list wearing a hat
+    assert avl.height() == 5                    # log2(32) - actually balanced
+    assert avl.inorder() == list(range(1, 32))
+    assert avl.is_balanced()
+
+    # Each of the four rotation cases, in isolation.
+    ll = AVLTree()
+    for value in (30, 20, 10):                  # left-left
+        ll.insert(value)
+    assert ll.root is not None and ll.root.val == 20 and ll.height() == 2
+
+    rr = AVLTree()
+    for value in (10, 20, 30):                  # right-right
+        rr.insert(value)
+    assert rr.root is not None and rr.root.val == 20 and rr.height() == 2
+
+    lr = AVLTree()
+    for value in (30, 10, 20):                  # left-right
+        lr.insert(value)
+    assert lr.root is not None and lr.root.val == 20 and lr.height() == 2
+
+    rl = AVLTree()
+    for value in (10, 30, 20):                  # right-left
+        rl.insert(value)
+    assert rl.root is not None and rl.root.val == 20 and rl.height() == 2
+
+    # Duplicates are rejected, and the size stays honest.
+    dup = AVLTree()
+    assert dup.insert(5) and not dup.insert(5)
+    assert dup.size == 1
+    assert not dup.delete(99)                   # absent
+    assert dup.delete(5) and dup.size == 0
+    assert dup.root is None and dup.inorder() == []
+
+    # Against a sorted list, with the invariant re-checked after EVERY
+    # operation - a rotation bug that only shows up mid-sequence would be
+    # invisible to an end-state-only test.
+    random.seed(12)
+    for _ in range(60):
+        tree = AVLTree()
+        reference: list[int] = []
+
+        for _ in range(80):
+            value = random.randint(0, 40)
+            if random.random() < 0.65:
+                changed = tree.insert(value)
+                assert changed == (value not in reference)
+                if changed:
+                    bisect.insort(reference, value)
+            else:
+                changed = tree.delete(value)
+                assert changed == (value in reference)
+                if changed:
+                    reference.remove(value)
+
+            # An in-order walk that comes out sorted IS the BST invariant.
+            assert tree.inorder() == reference
+            assert tree.is_balanced()            # still within +/-1 everywhere
+            assert tree.size == len(reference)
+
+            # The height bound AVL promises: h <= 1.44 * log2(n + 2)
+            if reference:
+                assert tree.height() <= 1.44 * math.log2(len(reference) + 2)
+
     print("12-Binary-Search-Tree (Python): all checks passed")
+    print("  AVL invariant re-verified after every one of 4800 random "
+          "insert/delete operations")
 
 
 if __name__ == "__main__":

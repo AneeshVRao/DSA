@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
+	"sort"
 )
 
 // ============================================================================
@@ -364,6 +366,287 @@ func equal(a, b []int) bool {
 	return true
 }
 
+// ============================================================================
+// 6. AVL - a BST that keeps itself balanced
+// ============================================================================
+
+// AVLNode is a BST node that also caches its own subtree height.
+//
+// The height must be STORED, not computed. Recomputing it would make every
+// insert O(n); cached, it updates in O(1) as the recursion unwinds.
+type AVLNode struct {
+	Val    int
+	Left   *AVLNode
+	Right  *AVLNode
+	Height int // a leaf has height 1
+}
+
+// AVLTree is a self-balancing BST. Every operation is O(log n) GUARANTEED.
+//
+// THE PROBLEM IT SOLVES. A plain BST is O(log n) only if the data arrives in a
+// lucky order. Insert 1, 2, 3, 4, 5 in order and every node becomes a right
+// child - the tree degenerates into a linked list and search is O(n). Sorted
+// input is not a pathological case, it is the single most common one.
+//
+// THE INVARIANT. For every node,
+//
+//	balance = height(left) - height(right)   is in {-1, 0, +1}
+//
+// That one constraint forces height <= 1.44 * log2(n). (Sketch: let N(h) be the
+// fewest nodes in an AVL tree of height h. Then N(h) = 1 + N(h-1) + N(h-2) -
+// the Fibonacci recurrence - so N(h) grows exponentially and h is logarithmic.)
+//
+// THE FOUR CASES. After an insert or delete one node may reach a balance of
+// +/-2. Which rotation fixes it depends on WHERE the offending subtree sits:
+//
+//	LL  balance > 1,  went left-left    -> rotate right
+//	RR  balance < -1, went right-right  -> rotate left
+//	LR  balance > 1,  went left-right   -> rotate left on the child, then
+//	                                       right on the node
+//	RL  balance < -1, went right-left   -> rotate right on the child, then
+//	                                       left on the node
+//
+// LR and RL are not new operations - they are the single rotations applied
+// twice. The first straightens the zig-zag into a line; the second is then the
+// simple case.
+//
+// A rotation is O(1): three pointer writes and two height updates. Only the
+// LOWEST unbalanced node needs rotating on insert - one rotation restores the
+// whole tree, because it also restores the subtree's original height. Delete is
+// harder: it can SHORTEN a subtree, so rebalancing may cascade to the root, up
+// to O(log n) rotations.
+//
+// AVL vs red-black: AVL is more strictly balanced (faster lookups), red-black
+// rotates less on write (faster inserts). Which is why C++ std::map, Java
+// TreeMap and the Linux kernel all use red-black, while read-heavy database
+// indexes lean AVL.
+//
+// Go's standard library has no ordered map either - the built-in map is a hash
+// table with randomised iteration order - so ordered lookups mean bringing this
+// yourself or sorting.
+type AVLTree struct {
+	root *AVLNode
+	size int
+}
+
+// avlHeight returns the height of a possibly-nil subtree. Empty is height 0.
+func avlHeight(node *AVLNode) int {
+	if node == nil {
+		return 0
+	}
+	return node.Height
+}
+
+func avlUpdateHeight(node *AVLNode) {
+	node.Height = 1 + max(avlHeight(node.Left), avlHeight(node.Right))
+}
+
+// avlBalance is left height minus right height. Positive means left-heavy.
+func avlBalance(node *AVLNode) int {
+	if node == nil {
+		return 0
+	}
+	return avlHeight(node.Left) - avlHeight(node.Right)
+}
+
+// avlRotateRight is the left-heavy fix. O(1).
+//
+//	     node                 pivot
+//	    /    \                /     \
+//	 pivot    C      ->      A      node
+//	 /   \                          /    \
+//	A     B                        B      C
+//
+// B moves from pivot's right to node's left. Every value in B is greater than
+// pivot and less than node, so it is legal in either position - which is
+// exactly why a rotation preserves the BST ordering.
+//
+// Update pivot's height AFTER node's: node is now pivot's child, so its height
+// has to be settled first.
+func avlRotateRight(node *AVLNode) *AVLNode {
+	pivot := node.Left
+	node.Left = pivot.Right
+	pivot.Right = node
+
+	avlUpdateHeight(node) // the lower node first
+	avlUpdateHeight(pivot)
+	return pivot // the new subtree root
+}
+
+// avlRotateLeft is the right-heavy fix - the exact mirror. O(1).
+func avlRotateLeft(node *AVLNode) *AVLNode {
+	pivot := node.Right
+	node.Right = pivot.Left
+	pivot.Left = node
+
+	avlUpdateHeight(node)
+	avlUpdateHeight(pivot)
+	return pivot
+}
+
+// avlRebalance restores the invariant at one node, returning the new root.
+func avlRebalance(node *AVLNode) *AVLNode {
+	avlUpdateHeight(node)
+	balance := avlBalance(node)
+
+	if balance > 1 { // left-heavy
+		if avlBalance(node.Left) < 0 { // LR: straighten the zig-zag first
+			node.Left = avlRotateLeft(node.Left)
+		}
+		return avlRotateRight(node) // LL
+	}
+	if balance < -1 { // right-heavy
+		if avlBalance(node.Right) > 0 { // RL: straighten first
+			node.Right = avlRotateRight(node.Right)
+		}
+		return avlRotateLeft(node) // RR
+	}
+	return node // already balanced
+}
+
+// Insert adds a value. O(log n) guaranteed. Reports false if already present.
+func (t *AVLTree) Insert(value int) bool {
+	inserted := false
+
+	var go_ func(node *AVLNode) *AVLNode
+	go_ = func(node *AVLNode) *AVLNode {
+		if node == nil {
+			inserted = true
+			return &AVLNode{Val: value, Height: 1}
+		}
+		switch {
+		case value < node.Val:
+			node.Left = go_(node.Left)
+		case value > node.Val:
+			node.Right = go_(node.Right)
+		default:
+			return node // duplicate: nothing changes
+		}
+		return avlRebalance(node) // unwinding: fix on the way up
+	}
+
+	t.root = go_(t.root)
+	if inserted {
+		t.size++
+	}
+	return inserted
+}
+
+// Delete removes a value. O(log n) guaranteed. Reports false if absent.
+//
+// The three BST delete cases are unchanged - what AVL adds is the rebalance as
+// the recursion unwinds. Unlike insert, deletion can shorten a subtree, so one
+// rotation may not be enough and the fixing can cascade to the root.
+func (t *AVLTree) Delete(value int) bool {
+	removed := false
+
+	// Remove the leftmost node, rebalancing on the way back up.
+	var deleteMin func(node *AVLNode) *AVLNode
+	deleteMin = func(node *AVLNode) *AVLNode {
+		if node.Left == nil {
+			return node.Right
+		}
+		node.Left = deleteMin(node.Left)
+		return avlRebalance(node)
+	}
+
+	var go_ func(node *AVLNode) *AVLNode
+	go_ = func(node *AVLNode) *AVLNode {
+		if node == nil {
+			return nil
+		}
+		switch {
+		case value < node.Val:
+			node.Left = go_(node.Left)
+		case value > node.Val:
+			node.Right = go_(node.Right)
+		default:
+			removed = true
+			if node.Left == nil { // 0 or 1 child: splice it out
+				return node.Right
+			}
+			if node.Right == nil {
+				return node.Left
+			}
+			// Two children: replace with the in-order successor (the smallest
+			// value on the right), then delete that successor.
+			successor := node.Right
+			for successor.Left != nil {
+				successor = successor.Left
+			}
+			node.Val = successor.Val
+			node.Right = deleteMin(node.Right)
+		}
+		return avlRebalance(node)
+	}
+
+	t.root = go_(t.root)
+	if removed {
+		t.size--
+	}
+	return removed
+}
+
+// Contains is O(log n) guaranteed - the whole point of the structure.
+func (t *AVLTree) Contains(value int) bool {
+	node := t.root
+	for node != nil {
+		if value == node.Val {
+			return true
+		}
+		if value < node.Val {
+			node = node.Left
+		} else {
+			node = node.Right
+		}
+	}
+	return false
+}
+
+// Inorder returns the values in sorted order. O(n).
+func (t *AVLTree) Inorder() []int {
+	out := []int{}
+	stack := []*AVLNode{}
+	node := t.root
+	for len(stack) > 0 || node != nil {
+		for node != nil {
+			stack = append(stack, node)
+			node = node.Left
+		}
+		node = stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		out = append(out, node.Val)
+		node = node.Right
+	}
+	return out
+}
+
+// Size returns the number of stored values.
+func (t *AVLTree) Size() int { return t.size }
+
+// Height returns the tree height, counting NODES (an empty tree is 0).
+func (t *AVLTree) Height() int { return avlHeight(t.root) }
+
+// IsBalanced verifies the invariant everywhere - for the tests, not for users.
+func (t *AVLTree) IsBalanced() bool {
+	var check func(node *AVLNode) bool
+	check = func(node *AVLNode) bool {
+		if node == nil {
+			return true
+		}
+		balance := avlBalance(node)
+		if balance > 1 || balance < -1 {
+			return false
+		}
+		// The cached height must also be honest, or the balance is a lie.
+		if node.Height != 1+max(avlHeight(node.Left), avlHeight(node.Right)) {
+			return false
+		}
+		return check(node.Left) && check(node.Right)
+	}
+	return check(t.root)
+}
+
 func main() {
 	//            8
 	//          /   \
@@ -461,5 +744,87 @@ func main() {
 	assert(heightOf(balanced) == 3, "height log2(16)-1")
 	assert(NewBST(values...).Height() == 14, "sorted inserts degenerate")
 
+	// --- AVL ------------------------------------------------------------------
+	// The case a plain BST cannot survive: strictly increasing input.
+	avl := &AVLTree{}
+	for value := 1; value <= 31; value++ {
+		avl.Insert(value)
+	}
+	assert(avl.Height() == 5, "log2(32) - actually balanced")
+	assert(avl.Size() == 31, "every value stored")
+	assert(avl.IsBalanced(), "invariant holds after 31 sorted inserts")
+
+	sorted := make([]int, 31)
+	for i := range sorted {
+		sorted[i] = i + 1
+	}
+	assert(equal(avl.Inorder(), sorted), "in-order walk is sorted")
+
+	// Each of the four rotation cases, in isolation. All four must end up as
+	// the same balanced tree rooted at 20.
+	for _, order := range [][]int{
+		{30, 20, 10}, // left-left
+		{10, 20, 30}, // right-right
+		{30, 10, 20}, // left-right
+		{10, 30, 20}, // right-left
+	} {
+		tree := &AVLTree{}
+		for _, value := range order {
+			tree.Insert(value)
+		}
+		assert(tree.Height() == 2, "one rotation flattens three nodes")
+		assert(equal(tree.Inorder(), []int{10, 20, 30}), "ordering survives")
+		assert(tree.IsBalanced(), "balanced after rotation")
+	}
+
+	// Duplicates are rejected, and the size stays honest.
+	dup := &AVLTree{}
+	assert(dup.Insert(5), "first insert succeeds")
+	assert(!dup.Insert(5), "duplicate is rejected")
+	assert(dup.Size() == 1, "size counts distinct values")
+	assert(!dup.Delete(99), "deleting an absent value reports false")
+	assert(dup.Delete(5) && dup.Size() == 0, "delete empties the tree")
+	assert(len(dup.Inorder()) == 0, "empty tree walks to nothing")
+
+	// Against a sorted reference, with the invariant re-checked after EVERY
+	// operation - a rotation bug that only shows up mid-sequence would be
+	// invisible to an end-state-only test.
+	avlRng := rand.New(rand.NewSource(12))
+	for trial := 0; trial < 60; trial++ {
+		tree := &AVLTree{}
+		reference := map[int]struct{}{}
+
+		for step := 0; step < 80; step++ {
+			value := avlRng.Intn(41)
+			_, present := reference[value]
+			if avlRng.Float64() < 0.65 {
+				assert(tree.Insert(value) == !present, "insert reports novelty")
+				reference[value] = struct{}{}
+			} else {
+				assert(tree.Delete(value) == present, "delete reports presence")
+				delete(reference, value)
+			}
+
+			expected := make([]int, 0, len(reference))
+			for v := range reference {
+				expected = append(expected, v)
+			}
+			sort.Ints(expected)
+
+			// An in-order walk that comes out sorted IS the BST invariant.
+			assert(equal(tree.Inorder(), expected), "still a sorted BST")
+			assert(tree.IsBalanced(), "still within +/-1 everywhere")
+			assert(tree.Size() == len(reference), "size stays honest")
+
+			// The height bound AVL promises: h <= 1.44 * log2(n + 2)
+			if len(reference) > 0 {
+				bound := 1.44 * math.Log2(float64(len(reference)+2))
+				assert(float64(tree.Height()) <= bound, "height bound holds")
+			}
+		}
+	}
+
 	fmt.Println("12-Binary-Search-Tree (Go): all checks passed")
+	fmt.Println("  AVL invariant re-verified after every one of 4800 random " +
+		"insert/delete operations")
 }

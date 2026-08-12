@@ -298,6 +298,263 @@ export function treeHeight(root) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 6. AVL - a BST that keeps itself balanced
+// ============================================================================
+/**
+ * A BST node that also caches its own subtree height.
+ *
+ * The height must be STORED, not computed. Recomputing it would make every
+ * insert `O(n)`; cached, it updates in `O(1)` as the recursion unwinds.
+ */
+class AVLNode {
+  constructor(val) {
+    this.val = val;
+    this.left = null;
+    this.right = null;
+    this.height = 1; // a leaf has height 1
+  }
+}
+
+/**
+ * A self-balancing BST. Every operation is `O(log n)` GUARANTEED.
+ *
+ * **The problem it solves.** A plain BST is `O(log n)` only if the data arrives
+ * in a lucky order. Insert 1, 2, 3, 4, 5 in order and every node becomes a
+ * right child - the tree degenerates into a linked list and search is `O(n)`.
+ * Sorted input is not a pathological case, it is the single most common one.
+ *
+ * **The invariant.** For every node,
+ *
+ *     balance = height(left) - height(right)   is in {-1, 0, +1}
+ *
+ * That one constraint forces `height <= 1.44 * log2(n)`. (Sketch: let `N(h)` be
+ * the fewest nodes in an AVL tree of height h. Then `N(h) = 1 + N(h-1) + N(h-2)`
+ * - the Fibonacci recurrence - so `N(h)` grows exponentially and h is
+ * logarithmic in n.)
+ *
+ * **The four cases.** After an insert or delete one node may reach a balance of
+ * +/-2. Which rotation fixes it depends on WHERE the offending subtree sits:
+ *
+ *     LL  balance > 1,  went left-left    -> rotate right
+ *     RR  balance < -1, went right-right  -> rotate left
+ *     LR  balance > 1,  went left-right   -> rotate left on the child,
+ *                                            then right on the node
+ *     RL  balance < -1, went right-left   -> rotate right on the child,
+ *                                            then left on the node
+ *
+ * LR and RL are not new operations - they are the single rotations applied
+ * twice. The first straightens the zig-zag into a line; the second is then the
+ * simple case.
+ *
+ * A rotation is `O(1)`: three pointer writes and two height updates. Only the
+ * LOWEST unbalanced node needs rotating on insert - one rotation restores the
+ * whole tree, because it also restores the subtree's original height. Delete is
+ * harder: it can SHORTEN a subtree, so rebalancing may cascade to the root, up
+ * to `O(log n)` rotations.
+ *
+ * AVL vs red-black: AVL is more strictly balanced (faster lookups), red-black
+ * rotates less on write (faster inserts). Which is why C++ `std::map`, Java
+ * `TreeMap` and the Linux kernel all use red-black, while read-heavy database
+ * indexes lean AVL.
+ *
+ * JavaScript has no ordered map at all - `Map` preserves *insertion* order, not
+ * sort order - so if you need `floor`, `ceil` or an ordered range scan, this is
+ * the structure you have to bring yourself.
+ */
+export class AVLTree {
+  #root = null;
+  #size = 0;
+
+  // --- the two primitives ---------------------------------------------------
+  /** Height of a possibly-absent subtree. An empty tree has height 0. */
+  static #heightOf(node) {
+    return node ? node.height : 0;
+  }
+
+  static #updateHeight(node) {
+    node.height = 1 + Math.max(AVLTree.#heightOf(node.left), AVLTree.#heightOf(node.right));
+  }
+
+  /** Left height minus right height. Positive means left-heavy. */
+  static #balanceOf(node) {
+    return node ? AVLTree.#heightOf(node.left) - AVLTree.#heightOf(node.right) : 0;
+  }
+
+  /**
+   * Left-heavy fix. O(1).
+   *
+   *         node                 pivot
+   *        /    \                /     \
+   *     pivot    C      ->      A      node
+   *     /   \                          /    \
+   *    A     B                        B      C
+   *
+   * B moves from pivot's right to node's left. Every value in B is greater than
+   * pivot and less than node, so it is legal in either position - which is
+   * exactly why a rotation preserves the BST ordering.
+   *
+   * Update pivot's height AFTER node's: node is now pivot's child, so its
+   * height has to be settled first.
+   */
+  static #rotateRight(node) {
+    const pivot = node.left;
+    node.left = pivot.right;
+    pivot.right = node;
+
+    AVLTree.#updateHeight(node); // the lower node first
+    AVLTree.#updateHeight(pivot);
+    return pivot; // the new subtree root
+  }
+
+  /** Right-heavy fix - the exact mirror of #rotateRight. O(1). */
+  static #rotateLeft(node) {
+    const pivot = node.right;
+    node.right = pivot.left;
+    pivot.left = node;
+
+    AVLTree.#updateHeight(node);
+    AVLTree.#updateHeight(pivot);
+    return pivot;
+  }
+
+  /** Restore the invariant at one node. Returns the new subtree root. */
+  static #rebalance(node) {
+    AVLTree.#updateHeight(node);
+    const balance = AVLTree.#balanceOf(node);
+
+    if (balance > 1) {
+      // left-heavy
+      if (AVLTree.#balanceOf(node.left) < 0) {
+        node.left = AVLTree.#rotateLeft(node.left); // LR: straighten first
+      }
+      return AVLTree.#rotateRight(node); // LL
+    }
+    if (balance < -1) {
+      // right-heavy
+      if (AVLTree.#balanceOf(node.right) > 0) {
+        node.right = AVLTree.#rotateRight(node.right); // RL: straighten first
+      }
+      return AVLTree.#rotateLeft(node); // RR
+    }
+    return node; // already balanced
+  }
+
+  // --- the public operations ------------------------------------------------
+  /** Insert a value. O(log n) guaranteed. Returns false if already present. */
+  insert(value) {
+    let inserted = false;
+
+    const go = (node) => {
+      if (node === null) {
+        inserted = true;
+        return new AVLNode(value);
+      }
+      if (value < node.val) node.left = go(node.left);
+      else if (value > node.val) node.right = go(node.right);
+      else return node; // duplicate: nothing changes
+      return AVLTree.#rebalance(node); // unwinding: fix on the way up
+    };
+
+    this.#root = go(this.#root);
+    if (inserted) this.#size++;
+    return inserted;
+  }
+
+  /**
+   * Delete a value. O(log n) guaranteed. Returns false if absent.
+   *
+   * The three BST delete cases are unchanged - what AVL adds is the rebalance
+   * as the recursion unwinds. Unlike insert, deletion can shorten a subtree, so
+   * one rotation may not be enough and the fixing can cascade.
+   */
+  delete(value) {
+    let removed = false;
+
+    /** Remove the leftmost node, rebalancing on the way back up. */
+    const deleteMin = (node) => {
+      if (node.left === null) return node.right;
+      node.left = deleteMin(node.left);
+      return AVLTree.#rebalance(node);
+    };
+
+    const go = (node) => {
+      if (node === null) return null;
+
+      if (value < node.val) {
+        node.left = go(node.left);
+      } else if (value > node.val) {
+        node.right = go(node.right);
+      } else {
+        removed = true;
+        if (node.left === null) return node.right; // 0 or 1 child: splice out
+        if (node.right === null) return node.left;
+
+        // Two children: replace with the in-order successor (the smallest
+        // value on the right), then delete that successor.
+        let successor = node.right;
+        while (successor.left !== null) successor = successor.left;
+        node.val = successor.val;
+        node.right = deleteMin(node.right);
+      }
+      return AVLTree.#rebalance(node);
+    };
+
+    this.#root = go(this.#root);
+    if (removed) this.#size--;
+    return removed;
+  }
+
+  /** O(log n) guaranteed - the whole point of the structure. */
+  contains(value) {
+    let node = this.#root;
+    while (node !== null) {
+      if (value === node.val) return true;
+      node = value < node.val ? node.left : node.right;
+    }
+    return false;
+  }
+
+  /** Sorted values. O(n). */
+  inorder() {
+    const out = [];
+    const stack = [];
+    let node = this.#root;
+    while (stack.length || node) {
+      while (node) {
+        stack.push(node);
+        node = node.left;
+      }
+      node = stack.pop();
+      out.push(node.val);
+      node = node.right;
+    }
+    return out;
+  }
+
+  get size() {
+    return this.#size;
+  }
+
+  height() {
+    return AVLTree.#heightOf(this.#root);
+  }
+
+  /** Verify the invariant everywhere - used by the tests, not by users. */
+  isBalanced() {
+    const check = (node) => {
+      if (node === null) return true;
+      if (Math.abs(AVLTree.#balanceOf(node)) > 1) return false;
+      // The cached height must also be honest, or the balance is a lie.
+      const expected =
+        1 + Math.max(AVLTree.#heightOf(node.left), AVLTree.#heightOf(node.right));
+      if (node.height !== expected) return false;
+      return check(node.left) && check(node.right);
+    };
+    return check(this.#root);
+  }
+}
+
 function demo() {
   //            8
   //          /   \
@@ -382,7 +639,86 @@ function demo() {
   assert.equal(treeHeight(balanced), 3);
   assert.equal(new BST(values).height(), 14); // the degenerate case
 
+  // --- AVL ------------------------------------------------------------------
+  // The case a plain BST cannot survive: strictly increasing input.
+  const avl = new AVLTree();
+  for (let value = 1; value <= 31; value++) avl.insert(value);
+
+  assert.equal(avl.height(), 5); // log2(32) - actually balanced
+  assert.equal(avl.size, 31);
+  assert.deepEqual(
+    avl.inorder(),
+    Array.from({ length: 31 }, (_, i) => i + 1),
+  );
+  assert.ok(avl.isBalanced());
+
+  // Each of the four rotation cases, in isolation. All four must end up as the
+  // same balanced tree rooted at 20.
+  for (const order of [
+    [30, 20, 10], // left-left
+    [10, 20, 30], // right-right
+    [30, 10, 20], // left-right
+    [10, 30, 20], // right-left
+  ]) {
+    const tree = new AVLTree();
+    for (const value of order) tree.insert(value);
+    assert.equal(tree.height(), 2);
+    assert.deepEqual(tree.inorder(), [10, 20, 30]);
+    assert.ok(tree.isBalanced());
+  }
+
+  // Duplicates are rejected, and the size stays honest.
+  const dup = new AVLTree();
+  assert.ok(dup.insert(5));
+  assert.ok(!dup.insert(5));
+  assert.equal(dup.size, 1);
+  assert.ok(!dup.delete(99)); // absent
+  assert.ok(dup.delete(5));
+  assert.equal(dup.size, 0);
+  assert.deepEqual(dup.inorder(), []);
+
+  // Deterministic PRNG so a failure is always reproducible.
+  let seed = 12;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+
+  // Against a sorted Set, with the invariant re-checked after EVERY operation -
+  // a rotation bug that only shows up mid-sequence would be invisible to an
+  // end-state-only test.
+  for (let trial = 0; trial < 60; trial++) {
+    const tree = new AVLTree();
+    const reference = new Set();
+
+    for (let step = 0; step < 80; step++) {
+      const value = Math.floor(random() * 41);
+      if (random() < 0.65) {
+        assert.equal(tree.insert(value), !reference.has(value));
+        reference.add(value);
+      } else {
+        assert.equal(tree.delete(value), reference.has(value));
+        reference.delete(value);
+      }
+
+      // An in-order walk that comes out sorted IS the BST invariant.
+      const expected = [...reference].sort((a, b) => a - b);
+      assert.deepEqual(tree.inorder(), expected);
+      assert.ok(tree.isBalanced()); // still within +/-1 everywhere
+      assert.equal(tree.size, reference.size);
+
+      // The height bound AVL promises: h <= 1.44 * log2(n + 2)
+      if (reference.size) {
+        assert.ok(tree.height() <= 1.44 * Math.log2(reference.size + 2));
+      }
+    }
+  }
+
   console.log("12-Binary-Search-Tree (JavaScript): all checks passed");
+  console.log(
+    "  AVL invariant re-verified after every one of 4800 random " +
+      "insert/delete operations",
+  );
 }
 
 demo();

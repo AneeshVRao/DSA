@@ -18,6 +18,16 @@ would work unchanged on an unordered tree, you have not used the invariant.
 | 11 | Two Sum IV - Input is a BST | Inorder + two pointers, or a seen set. | [LeetCode 653](https://leetcode.com/problems/two-sum-iv-input-is-a-bst/) |
 | 12 | Recover Binary Search Tree | Two nodes swapped: find the inorder dips. | [LeetCode 99](https://leetcode.com/problems/recover-binary-search-tree/) |
 
+## Balanced trees
+| Problem | Hint | Link |
+|---------|------|------|
+| Balance a Binary Search Tree | In-order walk, then rebuild from the sorted array. | [LeetCode 1382](https://leetcode.com/problems/balance-a-binary-search-tree/) |
+| Balanced Binary Tree | Return the height and the verdict together, in one pass. | [LeetCode 110](https://leetcode.com/problems/balanced-binary-tree/) |
+| Convert Sorted Array to BST | Always pick the middle - that is why it comes out balanced. | [LeetCode 108](https://leetcode.com/problems/convert-sorted-array-to-binary-search-tree/) |
+| Count of Smaller Numbers After Self | A BST with subtree sizes, or a Fenwick tree. | [LeetCode 315](https://leetcode.com/problems/count-of-smaller-numbers-after-self/) |
+| AVL Tree Insertion | Write the four rotation cases from scratch. | [GfG](https://www.geeksforgeeks.org/problems/avl-tree-insertion/1) |
+| AVL Tree Deletion | The case that can cascade - rebalance all the way up. | [GfG](https://www.geeksforgeeks.org/problems/avl-tree-deletion/1) |
+
 ## Self-check before moving on
 
 - [ ] I know why checking parent-vs-child is not enough for validation.
@@ -25,3 +35,7 @@ would work unchanged on an unordered tree, you have not used the invariant.
 - [ ] I know inorder yields sorted output, and use it deliberately.
 - [ ] I can do LCA, floor, ceiling and range sum in `O(h)`.
 - [ ] I know sorted input degenerates a BST, and how to build a balanced one.
+- [ ] I can draw the four AVL rotation cases and say which fixes which.
+- [ ] I know why a rotation preserves the BST ordering.
+- [ ] I know heights are CACHED, and why recomputing them is O(n) per insert.
+- [ ] I know insert needs one rotation but delete may cascade to the root.
