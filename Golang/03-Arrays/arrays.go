@@ -4,7 +4,10 @@
 // Run:  go run arrays.go
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"math/rand"
+)
 
 // ============================================================================
 // 1. A dynamic array from scratch (this is what a slice does underneath)
@@ -199,6 +202,70 @@ func (p *PrefixSum) RangeSum(left, right int) int {
 	return p.pre[right] - p.pre[left]
 }
 
+// PrefixSum2D answers any rectangle sum in O(1) after an O(rows*cols) build.
+//
+// pre[r][c] holds the sum of the whole rectangle from the top-left corner to
+// (r, c) EXCLUSIVE - so row 0 and column 0 stay zero and there are no boundary
+// special cases, exactly as in the 1-D version.
+//
+// BUILDING (inclusion-exclusion, going in):
+//
+//	pre[r+1][c+1] = grid[r][c]
+//	              + pre[r][c+1]     // everything above
+//	              + pre[r+1][c]     // everything to the left
+//	              - pre[r][c]       // the overlap, added twice
+//
+// QUERYING (inclusion-exclusion, coming back out):
+//
+//	+-------+-------+
+//	|   A   |   B   |     want D
+//	+-------+-------+
+//	|   C   |   D   |     D = total - B - C + A
+//	+-------+-------+
+//
+// The `+ A` is the whole trick: the top strip and the left strip both contain
+// corner A, so subtracting both removes it twice and it has to be added back.
+// Forgetting that term is the standard bug - and it only shows up on a query
+// that touches neither the top nor the left edge.
+//
+// Use it for many rectangle sums over a FIXED grid. If the grid changes, a 2-D
+// Fenwick tree (chapter 19) gives O(log^2 n) updates instead.
+type PrefixSum2D struct{ pre [][]int }
+
+// NewPrefixSum2D builds the table. O(rows * cols).
+func NewPrefixSum2D(grid [][]int) *PrefixSum2D {
+	rows := len(grid)
+	cols := 0
+	if rows > 0 {
+		cols = len(grid[0])
+	}
+
+	// One extra row and column of zeros, so no index can go negative.
+	pre := make([][]int, rows+1)
+	for i := range pre {
+		pre[i] = make([]int, cols+1)
+	}
+
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			pre[r+1][c+1] = grid[r][c] +
+				pre[r][c+1] + // everything above
+				pre[r+1][c] - // everything to the left
+				pre[r][c] // overlap counted twice
+		}
+	}
+	return &PrefixSum2D{pre: pre}
+}
+
+// RangeSum returns the sum of the rectangle [top:bottom] x [left:right], both
+// exclusive. O(1).
+func (p *PrefixSum2D) RangeSum(top, left, bottom, right int) int {
+	return p.pre[bottom][right] -
+		p.pre[top][right] - // strip above
+		p.pre[bottom][left] + // strip to the left
+		p.pre[top][left] // corner removed twice
+}
+
 // ============================================================================
 // 6. Sliding window
 // ============================================================================
@@ -378,5 +445,52 @@ func main() {
 	assert(equal(MergeSorted([]int{1, 4}, []int{2, 3, 5}), []int{1, 2, 3, 4, 5}), "merge")
 	assert(equal(MergeSorted(nil, []int{1}), []int{1}), "merge with empty")
 
+	// --- 2-D prefix sums ------------------------------------------------------
+	grid := [][]int{
+		{3, 0, 1, 4},
+		{5, 6, 3, 2},
+		{1, 2, 0, 1},
+	}
+	gridSums := NewPrefixSum2D(grid)
+	assert(gridSums.RangeSum(0, 0, 3, 4) == 28, "the whole grid")
+	assert(gridSums.RangeSum(1, 1, 3, 3) == 11, "interior rectangle 6+3+2+0")
+	assert(gridSums.RangeSum(0, 0, 1, 1) == 3, "a single cell")
+	assert(gridSums.RangeSum(2, 2, 2, 2) == 0, "an empty rectangle")
+
+	// Interior queries are the ones that catch a missing `+ corner` term, so
+	// check every rectangle against a brute-force double loop.
+	rng := rand.New(rand.NewSource(3))
+	for trial := 0; trial < 40; trial++ {
+		rows, cols := rng.Intn(8)+1, rng.Intn(8)+1
+		cells := make([][]int, rows)
+		for r := range cells {
+			cells[r] = make([]int, cols)
+			for c := range cells[r] {
+				cells[r][c] = rng.Intn(41) - 20
+			}
+		}
+
+		sums := NewPrefixSum2D(cells)
+		for top := 0; top <= rows; top++ {
+			for bottom := top; bottom <= rows; bottom++ {
+				for left := 0; left <= cols; left++ {
+					for right := left; right <= cols; right++ {
+						expected := 0
+						for r := top; r < bottom; r++ {
+							for c := left; c < right; c++ {
+								expected += cells[r][c]
+							}
+						}
+						assert(sums.RangeSum(top, left, bottom, right) == expected,
+							"rectangle sum matches brute force")
+					}
+				}
+			}
+		}
+	}
+
+	assert(NewPrefixSum2D(nil).RangeSum(0, 0, 0, 0) == 0, "no rows at all")
+
 	fmt.Println("03-Arrays (Go): all checks passed")
+	fmt.Println("  2-D prefix sums checked against brute force on every rectangle")
 }

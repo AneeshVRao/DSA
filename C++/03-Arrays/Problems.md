@@ -18,6 +18,13 @@ that does the same job. Knowing both is the point.
 | 11 | Container With Most Water | Two pointers; always move the shorter wall. | [LeetCode 11](https://leetcode.com/problems/container-with-most-water/) |
 | 12 | Rearrange Array Alternately | In-place index encoding trick. | [GfG](https://www.geeksforgeeks.org/problems/-rearrange-array-alternately-1587115620/1) |
 
+## 2-D prefix sums
+| Problem | Hint | Link |
+|---------|------|------|
+| Range Sum Query 2D - Immutable | 2-D prefix sums; mind the `+ corner` term. | [LeetCode 304](https://leetcode.com/problems/range-sum-query-2d-immutable/) |
+| Matrix Block Sum | Every cell is one rectangle query, clamped to the edges. | [LeetCode 1314](https://leetcode.com/problems/matrix-block-sum/) |
+| Count Submatrices With All Ones | 2-D prefix sums, or a histogram sweep. | [LeetCode 1504](https://leetcode.com/problems/count-submatrices-with-all-ones/) |
+
 ## Self-check before moving on
 
 - [ ] I can implement a growable array with correct copy semantics.
@@ -25,3 +32,4 @@ that does the same job. Knowing both is the point.
 - [ ] I use `long long` for any sum that can exceed 2 * 10^9.
 - [ ] I never compare a signed `int` against `v.size()` without a cast.
 - [ ] I know the erase-remove idiom and why `remove` alone is not enough.
+- [ ] I can build a 2-D prefix sum and explain the `+ corner` term.

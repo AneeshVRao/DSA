@@ -165,6 +165,69 @@ export class PrefixSum {
   }
 }
 
+/**
+ * O(rows * cols) build, then every rectangle sum is O(1).
+ *
+ * `pre[r][c]` holds the sum of the whole rectangle from the top-left corner to
+ * `(r, c)` EXCLUSIVE - so row 0 and column 0 stay zero and there are no
+ * boundary special cases, exactly as in the 1-D version.
+ *
+ * **Building** (inclusion-exclusion, going in):
+ *
+ *     pre[r+1][c+1] = grid[r][c]
+ *                   + pre[r][c+1]     // everything above
+ *                   + pre[r+1][c]     // everything to the left
+ *                   - pre[r][c]       // the overlap, added twice
+ *
+ * **Querying** (inclusion-exclusion, coming back out):
+ *
+ *     +-------+-------+
+ *     |   A   |   B   |     want D
+ *     +-------+-------+
+ *     |   C   |   D   |     D = total - B - C + A
+ *     +-------+-------+
+ *
+ * The `+ A` is the whole trick: the top strip and the left strip both contain
+ * corner A, so subtracting both removes it twice and it has to be added back.
+ * Forgetting that term is the standard bug - and it only shows up on a query
+ * touching neither the top nor the left edge.
+ *
+ * Use it for many rectangle sums over a FIXED grid. If the grid changes, a 2-D
+ * Fenwick tree (chapter 19) gives `O(log^2 n)` updates instead.
+ *
+ * Note `Array.from({length: n}, () => ...)` rather than `.fill([])` - `fill`
+ * would store the SAME row array reference n times, and writing to one row
+ * would write to all of them.
+ */
+export class PrefixSum2D {
+  constructor(grid) {
+    const rows = grid.length;
+    const cols = rows ? grid[0].length : 0;
+    // One extra row and column of zeros, so no index can go negative.
+    this.pre = Array.from({ length: rows + 1 }, () => new Array(cols + 1).fill(0));
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        this.pre[r + 1][c + 1] =
+          grid[r][c] +
+          this.pre[r][c + 1] + // everything above
+          this.pre[r + 1][c] - // everything to the left
+          this.pre[r][c]; // overlap counted twice
+      }
+    }
+  }
+
+  /** Sum of the rectangle [top, bottom) x [left, right) - both exclusive. O(1). */
+  rangeSum(top, left, bottom, right) {
+    return (
+      this.pre[bottom][right] -
+      this.pre[top][right] - // strip above
+      this.pre[bottom][left] + // strip to the left
+      this.pre[top][left] // corner removed twice
+    );
+  }
+}
+
 // ============================================================================
 // 6. Sliding window
 // ============================================================================
@@ -304,7 +367,55 @@ function demo() {
   assert.deepEqual(mergeSorted([1, 4], [2, 3, 5]), [1, 2, 3, 4, 5]);
   assert.deepEqual(mergeSorted([], [1]), [1]);
 
+  // --- 2-D prefix sums ------------------------------------------------------
+  const grid = [
+    [3, 0, 1, 4],
+    [5, 6, 3, 2],
+    [1, 2, 0, 1],
+  ];
+  const gridSums = new PrefixSum2D(grid);
+  assert.equal(gridSums.rangeSum(0, 0, 3, 4), 28); // the whole grid
+  assert.equal(gridSums.rangeSum(1, 1, 3, 3), 11); // 6+3+2+0
+  assert.equal(gridSums.rangeSum(0, 0, 1, 1), 3); // a single cell
+  assert.equal(gridSums.rangeSum(2, 2, 2, 2), 0); // an empty rectangle
+
+  // Deterministic PRNG so a failure is always reproducible.
+  let seed = 3;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const randInt = (lo, hi) => lo + Math.floor(random() * (hi - lo + 1));
+
+  // Interior queries are the ones that catch a missing `+ corner` term, so
+  // check every rectangle against a brute-force double loop.
+  for (let trial = 0; trial < 40; trial++) {
+    const rows = randInt(1, 8);
+    const cols = randInt(1, 8);
+    const cells = Array.from({ length: rows }, () =>
+      Array.from({ length: cols }, () => randInt(-20, 20)),
+    );
+    const sums = new PrefixSum2D(cells);
+
+    for (let top = 0; top <= rows; top++) {
+      for (let bottom = top; bottom <= rows; bottom++) {
+        for (let left = 0; left <= cols; left++) {
+          for (let right = left; right <= cols; right++) {
+            let expected = 0;
+            for (let r = top; r < bottom; r++) {
+              for (let c = left; c < right; c++) expected += cells[r][c];
+            }
+            assert.equal(sums.rangeSum(top, left, bottom, right), expected);
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(new PrefixSum2D([]).rangeSum(0, 0, 0, 0), 0); // no rows at all
+
   console.log("03-Arrays (JavaScript): all checks passed");
+  console.log("  2-D prefix sums checked against brute force on every rectangle");
 }
 
 demo();

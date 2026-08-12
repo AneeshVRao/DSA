@@ -8,6 +8,7 @@ Run:  python arrays.py
 from __future__ import annotations
 
 import ctypes
+import random
 
 
 # ============================================================================
@@ -179,6 +180,62 @@ class PrefixSum:
         return self.prefix[right] - self.prefix[left]
 
 
+class PrefixSum2D:
+    """O(rows * cols) build, then every rectangle sum is O(1).
+
+    prefix[r][c] holds the sum of the whole rectangle from the top-left corner
+    to (r, c) exclusive - so row 0 and column 0 stay zero and there are no
+    boundary special cases, exactly as in the 1-D version.
+
+    BUILDING (inclusion-exclusion, going in):
+
+        prefix[r+1][c+1] = grid[r][c]
+                         + prefix[r][c+1]      # everything above
+                         + prefix[r+1][c]      # everything to the left
+                         - prefix[r][c]        # the overlap, added twice
+
+    QUERYING (inclusion-exclusion, coming back out):
+
+        +-------+-------+
+        |   A   |   B   |     want D
+        +-------+-------+
+        |   C   |   D   |     D = total - B - C + A
+        +-------+-------+
+
+    The `+ A` is the whole trick: the top strip and the left strip both contain
+    corner A, so subtracting both removes it twice and it has to be added back.
+    Forgetting that term is the standard bug, and it only shows up when the
+    query does not touch the top or left edge.
+
+    Use it when many rectangle sums are needed over a FIXED grid. If the grid
+    changes, a 2-D Fenwick tree (chapter 19) gives O(log^2 n) updates instead.
+    """
+
+    def __init__(self, grid: list[list[int]]) -> None:
+        rows = len(grid)
+        cols = len(grid[0]) if rows else 0
+        # One extra row and column of zeros, so no index can go negative.
+        self.prefix = [[0] * (cols + 1) for _ in range(rows + 1)]
+
+        for r in range(rows):
+            for c in range(cols):
+                self.prefix[r + 1][c + 1] = (
+                    grid[r][c]
+                    + self.prefix[r][c + 1]     # everything above
+                    + self.prefix[r + 1][c]     # everything to the left
+                    - self.prefix[r][c]         # overlap counted twice
+                )
+
+    def range_sum(self, top: int, left: int, bottom: int, right: int) -> int:
+        """Sum of the rectangle [top:bottom] x [left:right] - both exclusive."""
+        return (
+            self.prefix[bottom][right]
+            - self.prefix[top][right]           # strip above
+            - self.prefix[bottom][left]         # strip to the left
+            + self.prefix[top][left]            # corner removed twice
+        )
+
+
 # ============================================================================
 # 6. Sliding window
 # ============================================================================
@@ -315,7 +372,40 @@ def demo() -> None:
     assert merge_sorted([1, 4], [2, 3, 5]) == [1, 2, 3, 4, 5]
     assert merge_sorted([], [1]) == [1]
 
+    # --- 2-D prefix sums -----------------------------------------------------
+    grid = [
+        [3, 0, 1, 4],
+        [5, 6, 3, 2],
+        [1, 2, 0, 1],
+    ]
+    grid_sums = PrefixSum2D(grid)
+    assert grid_sums.range_sum(0, 0, 3, 4) == 28          # the whole grid
+    assert grid_sums.range_sum(1, 1, 3, 3) == 11          # 6+3+2+0
+    assert grid_sums.range_sum(0, 0, 1, 1) == 3           # a single cell
+    assert grid_sums.range_sum(2, 2, 2, 2) == 0           # an empty rectangle
+
+    # Interior queries are the ones that catch a missing `+ corner` term, so
+    # check every rectangle against a brute-force double loop.
+    random.seed(3)
+    for _ in range(40):
+        rows, cols = random.randint(1, 8), random.randint(1, 8)
+        cells = [[random.randint(-20, 20) for _ in range(cols)]
+                 for _ in range(rows)]
+        sums = PrefixSum2D(cells)
+
+        for top in range(rows + 1):
+            for bottom in range(top, rows + 1):
+                for left in range(cols + 1):
+                    for right in range(left, cols + 1):
+                        expected = sum(cells[r][c]
+                                       for r in range(top, bottom)
+                                       for c in range(left, right))
+                        assert sums.range_sum(top, left, bottom, right) == expected
+
+    assert PrefixSum2D([]).range_sum(0, 0, 0, 0) == 0     # no rows at all
+
     print("03-Arrays (Python): all checks passed")
+    print("  2-D prefix sums checked against brute force on every rectangle")
 
 
 if __name__ == "__main__":

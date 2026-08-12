@@ -74,6 +74,25 @@ despite the nested `while`.
 `prefix[i] = a[0] + ... + a[i-1]`, then `sum(a[l:r]) = prefix[r] - prefix[l]`.
 Turns "sum of many ranges" from `O(n)` per query into `O(1)`.
 
+The 2-D version answers any **rectangle** sum in `O(1)` after an
+`O(rows*cols)` build, by inclusion-exclusion:
+
+```text
++-------+-------+
+|   A   |   B   |    want D
++-------+-------+
+|   C   |   D   |    D = total - B - C + A
++-------+-------+
+```
+
+The `+ A` is the whole trick - the top strip and the left strip both contain
+corner A, so subtracting both removes it twice. **Forgetting that term is the
+standard bug**, and it only shows up on a query that touches neither the top nor
+the left edge, so a careless test suite will miss it.
+
+Use it over a FIXED grid. If the grid changes, a 2-D Fenwick tree (chapter 19)
+gives `O(log^2 n)` updates instead.
+
 ### e. Kadane - `O(n)`
 
 Maximum subarray sum: at each element decide "extend the previous best, or

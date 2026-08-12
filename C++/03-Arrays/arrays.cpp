@@ -8,6 +8,7 @@
 #include <cassert>
 #include <iostream>
 #include <numeric>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -178,6 +179,64 @@ class PrefixSum {
     vector<long long> pre_;
 };
 
+// O(rows * cols) build, then every rectangle sum is O(1).
+//
+// pre_[r][c] holds the sum of the whole rectangle from the top-left corner to
+// (r, c) EXCLUSIVE - so row 0 and column 0 stay zero and there are no boundary
+// special cases, exactly as in the 1-D version.
+//
+// BUILDING (inclusion-exclusion, going in):
+//
+//     pre[r+1][c+1] = grid[r][c]
+//                   + pre[r][c+1]     // everything above
+//                   + pre[r+1][c]     // everything to the left
+//                   - pre[r][c]       // the overlap, added twice
+//
+// QUERYING (inclusion-exclusion, coming back out):
+//
+//     +-------+-------+
+//     |   A   |   B   |     want D
+//     +-------+-------+
+//     |   C   |   D   |     D = total - B - C + A
+//     +-------+-------+
+//
+// The `+ A` is the whole trick: the top strip and the left strip both contain
+// corner A, so subtracting both removes it twice and it has to be added back.
+// Forgetting that term is the standard bug - and it only shows up on a query
+// that touches neither the top nor the left edge.
+//
+// Use it for many rectangle sums over a FIXED grid. If the grid changes, a 2-D
+// Fenwick tree (chapter 19) gives O(log^2 n) updates instead.
+class PrefixSum2D {
+   public:
+    explicit PrefixSum2D(const vector<vector<int>>& grid) {
+        size_t rows = grid.size();
+        size_t cols = rows ? grid[0].size() : 0;
+        // One extra row and column of zeros, so no index can go negative.
+        pre_.assign(rows + 1, vector<long long>(cols + 1, 0));
+
+        for (size_t r = 0; r < rows; r++) {
+            for (size_t c = 0; c < cols; c++) {
+                pre_[r + 1][c + 1] = grid[r][c]
+                                     + pre_[r][c + 1]   // everything above
+                                     + pre_[r + 1][c]   // everything to the left
+                                     - pre_[r][c];      // overlap counted twice
+            }
+        }
+    }
+
+    // Sum of the rectangle [top, bottom) x [left, right) - both exclusive. O(1).
+    long long rangeSum(size_t top, size_t left, size_t bottom, size_t right) const {
+        return pre_[bottom][right]
+               - pre_[top][right]      // strip above
+               - pre_[bottom][left]    // strip to the left
+               + pre_[top][left];      // corner removed twice
+    }
+
+   private:
+    vector<vector<long long>> pre_;
+};
+
 // ============================================================================
 // 6. Sliding window
 // ============================================================================
@@ -303,6 +362,45 @@ int main() {
     assert((mergeSorted({1, 4}, {2, 3, 5}) == vector<int>{1, 2, 3, 4, 5}));
     assert((mergeSorted({}, {1}) == vector<int>{1}));
 
+    // --- 2-D prefix sums ------------------------------------------------------
+    vector<vector<int>> grid{
+        {3, 0, 1, 4},
+        {5, 6, 3, 2},
+        {1, 2, 0, 1},
+    };
+    PrefixSum2D gridSums(grid);
+    assert(gridSums.rangeSum(0, 0, 3, 4) == 28);     // the whole grid
+    assert(gridSums.rangeSum(1, 1, 3, 3) == 11);     // 6+3+2+0
+    assert(gridSums.rangeSum(0, 0, 1, 1) == 3);      // a single cell
+    assert(gridSums.rangeSum(2, 2, 2, 2) == 0);      // an empty rectangle
+
+    // Interior queries are the ones that catch a missing `+ corner` term, so
+    // check every rectangle against a brute-force double loop.
+    mt19937 rng(3);
+    for (int trial = 0; trial < 40; trial++) {
+        size_t rows = rng() % 8 + 1, cols = rng() % 8 + 1;
+        vector<vector<int>> cells(rows, vector<int>(cols));
+        for (auto& row : cells)
+            for (int& cell : row) cell = int(rng() % 41) - 20;
+
+        PrefixSum2D sums(cells);
+        for (size_t top = 0; top <= rows; top++) {
+            for (size_t bottom = top; bottom <= rows; bottom++) {
+                for (size_t left = 0; left <= cols; left++) {
+                    for (size_t right = left; right <= cols; right++) {
+                        long long expected = 0;
+                        for (size_t r = top; r < bottom; r++)
+                            for (size_t c = left; c < right; c++) expected += cells[r][c];
+                        assert(sums.rangeSum(top, left, bottom, right) == expected);
+                    }
+                }
+            }
+        }
+    }
+
+    assert(PrefixSum2D({}).rangeSum(0, 0, 0, 0) == 0);   // no rows at all
+
     cout << "03-Arrays (C++): all checks passed\n";
+    cout << "  2-D prefix sums checked against brute force on every rectangle\n";
     return 0;
 }

@@ -18,6 +18,13 @@ prefix sums. Recognising the pattern is the skill being trained.
 | 11 | Subarray Sum Equals K | Prefix sums + a dict of counts. | [LeetCode 560](https://leetcode.com/problems/subarray-sum-equals-k/) |
 | 12 | Maximum Sum Subarray of Size K | Fixed sliding window. | [GfG](https://www.geeksforgeeks.org/problems/max-sum-subarray-of-size-k5313/1) |
 
+## 2-D prefix sums
+| Problem | Hint | Link |
+|---------|------|------|
+| Range Sum Query 2D - Immutable | 2-D prefix sums; mind the `+ corner` term. | [LeetCode 304](https://leetcode.com/problems/range-sum-query-2d-immutable/) |
+| Matrix Block Sum | Every cell is one rectangle query, clamped to the edges. | [LeetCode 1314](https://leetcode.com/problems/matrix-block-sum/) |
+| Count Submatrices With All Ones | 2-D prefix sums, or a histogram sweep. | [LeetCode 1504](https://leetcode.com/problems/count-submatrices-with-all-ones/) |
+
 ## Self-check before moving on
 
 - [ ] I can write two-pointer and sliding-window loops without a reference.
@@ -25,3 +32,4 @@ prefix sums. Recognising the pattern is the skill being trained.
 - [ ] I can build a prefix-sum array and answer range queries in `O(1)`.
 - [ ] I can explain why `append` is amortised `O(1)`.
 - [ ] I never mutate a list while iterating over it.
+- [ ] I can build a 2-D prefix sum and explain the `+ corner` term.

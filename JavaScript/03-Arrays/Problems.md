@@ -18,6 +18,13 @@ Work through them by pattern, not by difficulty. Prefer index loops over
 | 11 | Container With Most Water | Two pointers, always move the shorter wall. | [LeetCode 11](https://leetcode.com/problems/container-with-most-water/) |
 | 12 | Subarray Sum Equals K | Prefix sums + `Map` of counts. | [LeetCode 560](https://leetcode.com/problems/subarray-sum-equals-k/) |
 
+## 2-D prefix sums
+| Problem | Hint | Link |
+|---------|------|------|
+| Range Sum Query 2D - Immutable | 2-D prefix sums; mind the `+ corner` term. | [LeetCode 304](https://leetcode.com/problems/range-sum-query-2d-immutable/) |
+| Matrix Block Sum | Every cell is one rectangle query, clamped to the edges. | [LeetCode 1314](https://leetcode.com/problems/matrix-block-sum/) |
+| Count Submatrices With All Ones | 2-D prefix sums, or a histogram sweep. | [LeetCode 1504](https://leetcode.com/problems/count-submatrices-with-all-ones/) |
+
 ## Self-check before moving on
 
 - [ ] I keep arrays packed (no `delete`, no accidental holes).
@@ -25,3 +32,4 @@ Work through them by pattern, not by difficulty. Prefer index loops over
 - [ ] I never use `shift()` to drain a queue.
 - [ ] I can write two-pointer and sliding-window loops from scratch.
 - [ ] I know `[...grid]` is a shallow copy and when that bites.
+- [ ] I can build a 2-D prefix sum and explain the `+ corner` term.

@@ -18,6 +18,13 @@ hazards: sub-slice aliasing, and forgetting to reassign `append`.
 | 11 | Subarray Sum Equals K | Prefix sums + `map[int]int` of counts. | [LeetCode 560](https://leetcode.com/problems/subarray-sum-equals-k/) |
 | 12 | Container With Most Water | Two pointers; always move the shorter wall. | [LeetCode 11](https://leetcode.com/problems/container-with-most-water/) |
 
+## 2-D prefix sums
+| Problem | Hint | Link |
+|---------|------|------|
+| Range Sum Query 2D - Immutable | 2-D prefix sums; mind the `+ corner` term. | [LeetCode 304](https://leetcode.com/problems/range-sum-query-2d-immutable/) |
+| Matrix Block Sum | Every cell is one rectangle query, clamped to the edges. | [LeetCode 1314](https://leetcode.com/problems/matrix-block-sum/) |
+| Count Submatrices With All Ones | 2-D prefix sums, or a histogram sweep. | [LeetCode 1504](https://leetcode.com/problems/count-submatrices-with-all-ones/) |
+
 ## Self-check before moving on
 
 - [ ] I always write `s = append(s, x)`, never bare `append(s, x)`.
@@ -25,3 +32,4 @@ hazards: sub-slice aliasing, and forgetting to reassign `append`.
 - [ ] I pre-size slices with `make([]T, 0, n)` when the length is known.
 - [ ] I can write two-pointer and sliding-window loops from scratch.
 - [ ] I can build a prefix-sum slice and answer range queries in `O(1)`.
+- [ ] I can build a 2-D prefix sum and explain the `+ corner` term.
