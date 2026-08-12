@@ -376,9 +376,12 @@ int main() {
     copyOfLl.pushBack(7);
     assert(copyOfLl.size() == ll.size() + 1);
 
+    // The extra parentheses are not decoration: the preprocessor splits macro
+    // arguments on commas at paren-depth 0, and BRACES do not protect them.
+    // Without them, assert() sees three arguments and refuses to compile.
     int mid = -1;
-    assert(SinglyLinkedList{1, 2, 3}.middle(mid) && mid == 2);
-    assert(SinglyLinkedList{1, 2, 3, 4}.middle(mid) && mid == 3);  // 2nd middle
+    assert((SinglyLinkedList{1, 2, 3}.middle(mid) && mid == 2));
+    assert((SinglyLinkedList{1, 2, 3, 4}.middle(mid) && mid == 3));  // 2nd middle
     assert(!SinglyLinkedList{}.middle(mid));
 
     SinglyLinkedList nth{1, 2, 3, 4, 5};

@@ -329,13 +329,14 @@ int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
-    //            8
-    //          /   \
-    //         3     10
-    //        / \      \
-    //       1   6      14
-    //          / \     /
-    //         4   7   13
+    /*           8         A block comment, because a // line ending in a
+     *         /   \       backslash is a line continuation and would swallow
+     *        3     10     the next line (-Wcomment).
+     *       / \      \
+     *      1   6      14
+     *         / \     /
+     *        4   7   13
+     */
     BST bst({8, 3, 10, 1, 6, 14, 4, 7, 13});
     assert(bst.size() == 9);
     assert((bst.inorder() == vector<int>{1, 3, 4, 6, 7, 8, 10, 13, 14}));

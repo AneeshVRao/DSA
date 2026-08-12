@@ -296,8 +296,10 @@ int main() {
 
     // Negatives: comparison sorts handle them, counting/radix must refuse.
     vector<int> negatives{3, -1, 4, -1, 5};
-    for (const string& name : {"bubble", "selection", "insertion", "merge",
-                               "quick", "heap"}) {
+    // const char* rather than const string&: a string reference would bind to
+    // a temporary constructed from each literal (-Wrange-loop-construct).
+    for (const char* name : {"bubble", "selection", "insertion", "merge",
+                             "quick", "heap"}) {
         for (auto& [algoName, fn] : algorithms) {
             if (algoName != name) continue;
             vector<int> mine = negatives, expected = negatives;

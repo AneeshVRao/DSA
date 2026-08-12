@@ -404,11 +404,12 @@ int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
-    //         1
-    //       /   \
-    //      2     3
-    //     / \
-    //    4   5
+    /*        1          A block comment, because a // line ending in a
+     *      /   \        backslash is a line continuation and would swallow
+     *     2     3       the next line (-Wcomment).
+     *    / \
+     *   4   5
+     */
     TreeNode* tree = buildTree({1, 2, 3, 4, 5});
 
     assert((preorder(tree) == vector<int>{1, 2, 4, 5, 3}));
