@@ -7,8 +7,9 @@ Run:  python advanced.py
 
 from __future__ import annotations
 
+import math
 import random
-from typing import Callable
+from typing import Callable, Sequence
 
 
 # ============================================================================
@@ -137,7 +138,7 @@ class SegmentTree:
     n without computing the exact bound.
     """
 
-    def __init__(self, values: list[float],
+    def __init__(self, values: Sequence[float],
                  operation: Callable[[float, float], float] = lambda a, b: a + b,
                  identity: float = 0) -> None:
         self.n = len(values)
@@ -147,7 +148,7 @@ class SegmentTree:
         if self.n:
             self._build(values, 1, 0, self.n - 1)
 
-    def _build(self, values: list[float], node: int, lo: int, hi: int) -> None:
+    def _build(self, values: Sequence[float], node: int, lo: int, hi: int) -> None:
         """O(n): each node is visited exactly once."""
         if lo == hi:
             self.tree[node] = values[lo]
@@ -266,6 +267,95 @@ class LazySegmentTree:
 
 # ============================================================================
 # demo
+# ============================================================================
+# ============================================================================
+# 5. Sparse table - O(1) range queries on data that never changes
+# ============================================================================
+class SparseTable:
+    """O(n log n) build, then range min/max/gcd in O(1). No updates.
+
+    A segment tree answers a range query in O(log n) by stitching together
+    O(log n) disjoint blocks. A sparse table answers it in O(1) by covering the
+    range with just TWO blocks - which are allowed to OVERLAP.
+
+    THE PRECOMPUTE. table[k][i] holds the answer for the block of length 2^k
+    starting at i. Each level is built from the one below by joining two
+    half-length blocks:
+
+        table[k][i] = op(table[k-1][i], table[k-1][i + 2^(k-1)])
+
+    log n levels of n entries each: O(n log n) time and space.
+
+    THE QUERY. For [left, right), let k = floor(log2(right - left)). Two blocks
+    of length 2^k - one anchored at each end - always cover the range, because
+    2 * 2^k >= right - left by the choice of k:
+
+        [left ............................ right)
+        [--- 2^k ---]
+                     [--- 2^k ---]          <- these two OVERLAP in the middle
+
+    Answer = op(block starting at left, block ending at right).
+
+    THE CATCH, AND IT IS THE WHOLE POINT. Those two blocks overlap, so every
+    element in the middle is counted TWICE. That is harmless only if the
+    operation is IDEMPOTENT - op(x, x) == x:
+
+        min, max, gcd, lcm, bitwise and, bitwise or    -> idempotent, works
+        sum, product, xor, count                       -> NOT, gives nonsense
+
+    For a sum you need a prefix-sum array (static) or a Fenwick tree (dynamic).
+    This is the single most common misuse of the structure.
+
+    | | Sparse table | Segment tree | Fenwick tree |
+    |-|--------------|--------------|--------------|
+    | Query | **O(1)** | O(log n) | O(log n) |
+    | Update | **impossible** | O(log n) | O(log n) |
+    | Build | O(n log n) | O(n) | O(n log n) |
+    | Space | O(n log n) | O(n) | **O(n)** |
+    | Operations | idempotent only | any associative | invertible only |
+
+    So: static data plus a huge number of min/max queries -> sparse table.
+    Anything that changes -> segment tree.
+    """
+
+    def __init__(self, values: Sequence[int],
+                 op: Callable[[int, int], int] = min) -> None:
+        self.op = op
+        n = len(values)
+
+        # log2_floor[i] = floor(log2(i)), computed once so queries stay O(1).
+        # Recomputing a logarithm per query would work but drags float maths
+        # into an integer algorithm - and floor(log2(x)) is famously off by one
+        # near powers of two when done in floating point.
+        self.log2_floor = [0] * (n + 1)
+        for i in range(2, n + 1):
+            self.log2_floor[i] = self.log2_floor[i // 2] + 1
+
+        levels = self.log2_floor[n] + 1 if n else 1
+        self.table: list[list[int]] = [list(values)]
+        for k in range(1, levels):
+            span = 1 << k
+            half = span >> 1
+            previous = self.table[k - 1]
+            self.table.append([
+                op(previous[i], previous[i + half])
+                for i in range(n - span + 1)
+            ])
+
+    def query(self, left: int, right: int) -> int:
+        """op over values[left:right] - right exclusive. O(1).
+
+        Raises ValueError on an empty range: there is no identity element to
+        return, since op is caller-supplied.
+        """
+        if left >= right:
+            raise ValueError("sparse table query needs a non-empty range")
+        k = self.log2_floor[right - left]
+        # Two overlapping blocks of length 2^k. The overlap is why op must be
+        # idempotent - see the class docstring.
+        return self.op(self.table[k][left], self.table[k][right - (1 << k)])
+
+
 # ============================================================================
 def demo() -> None:
     dsu = DisjointSet(10)
@@ -393,7 +483,57 @@ def demo() -> None:
             else:
                 assert tree.range_sum(left, right) == sum(data[left:right])
 
+    # --- Sparse table --------------------------------------------------------
+    values = [7, 2, 3, 0, 5, 10, 3, 12, 18]
+    mins = SparseTable(values, min)
+    assert mins.query(0, len(values)) == 0
+    assert mins.query(0, 1) == 7                   # a single element
+    assert mins.query(4, 7) == 3                   # 5, 10, 3
+    assert mins.query(7, 9) == 12
+
+    maxes = SparseTable(values, max)
+    assert maxes.query(0, len(values)) == 18
+    assert maxes.query(1, 4) == 3                  # 2, 3, 0
+
+    gcds = SparseTable([12, 18, 24, 36], math.gcd)
+    assert gcds.query(0, 4) == 6
+    assert gcds.query(2, 4) == 12
+
+    try:
+        mins.query(3, 3)                           # empty range
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+    # Every possible range, against brute force, for all three operations.
+    for _ in range(40):
+        n = random.randint(1, 40)
+        data = [random.randint(-100, 100) for _ in range(n)]
+        min_table = SparseTable(data, min)
+        max_table = SparseTable(data, max)
+        positive = [abs(x) + 1 for x in data]
+        gcd_table = SparseTable(positive, math.gcd)
+
+        for left in range(n):
+            for right in range(left + 1, n + 1):
+                assert min_table.query(left, right) == min(data[left:right])
+                assert max_table.query(left, right) == max(data[left:right])
+
+                expected_gcd = positive[left]
+                for value in positive[left + 1:right]:
+                    expected_gcd = math.gcd(expected_gcd, value)
+                assert gcd_table.query(left, right) == expected_gcd
+
+    # And the misuse the docstring warns about: SUM is not idempotent, so the
+    # overlapping blocks double-count. Demonstrated rather than merely claimed.
+    sums = SparseTable([1, 2, 3, 4, 5], lambda a, b: a + b)
+    assert sums.query(0, 3) == 8    # (1+2) + (2+3): the 2 is counted twice, not 6
+    assert sums.query(0, 4) == 20   # both blocks ARE [0,4): 10 + 10, not 10
+    assert sums.query(2, 3) == 6    # even ONE element doubles: op(x, x) != x
+
     print("19-Advanced-Topics (Python): all checks passed")
+    print("  Sparse table checked on EVERY range of 40 random arrays for min,")
+    print("  max and gcd - and shown to double-count for a non-idempotent op")
     print("  Union-Find, Fenwick, segment tree and lazy propagation all "
           "cross-checked against brute force on 50 random runs each")
 

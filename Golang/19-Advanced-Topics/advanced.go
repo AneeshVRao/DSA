@@ -345,6 +345,108 @@ func (l *LazySegmentTree) rangeSum(node, lo, hi, left, right int) int {
 // demo
 // ============================================================================
 
+// ============================================================================
+// 5. Sparse table - O(1) range queries on data that never changes
+// ============================================================================
+
+// SparseTable answers idempotent range queries in O(1) after an O(n log n)
+// build. It supports no updates at all.
+//
+// O(n log n) build, then range min/max/gcd in O(1). No updates.
+//
+// A segment tree answers a range query in O(log n) by stitching together
+// O(log n) DISJOINT blocks. A sparse table answers it in O(1) by covering the
+// range with just TWO blocks - which are allowed to OVERLAP.
+//
+// THE PRECOMPUTE. table[k][i] holds the answer for the block of length 2^k
+// starting at i. Each level is built from the one below by joining two
+// half-length blocks:
+//
+//	table[k][i] = op(table[k-1][i], table[k-1][i + 2^(k-1)])
+//
+// log n levels of n entries each: O(n log n) time and space.
+//
+// THE QUERY. For [left, right), let k = floor(log2(right - left)). Two blocks
+// of length 2^k - one anchored at each end - always cover the range, because
+// 2 * 2^k >= right - left by the choice of k:
+//
+//	[left ............................ right)
+//	[--- 2^k ---]
+//	             [--- 2^k ---]        <- these two OVERLAP in the middle
+//
+// THE CATCH, AND IT IS THE WHOLE POINT. Those blocks overlap, so elements in
+// the middle are counted TWICE. That is harmless only if the operation is
+// IDEMPOTENT - op(x, x) == x:
+//
+//	min, max, gcd, lcm, bitwise and, bitwise or   -> idempotent, works
+//	sum, product, xor, count                      -> NOT, gives nonsense
+//
+// For a sum use a prefix-sum array (static) or a Fenwick tree (dynamic). This
+// is the single most common misuse of the structure - and note it is broken
+// even for a ONE-element range, where both blocks are the same element.
+//
+//	           Sparse table   Segment tree   Fenwick tree
+//	Query      O(1)           O(log n)       O(log n)
+//	Update     impossible     O(log n)       O(log n)
+//	Build      O(n log n)     O(n)           O(n log n)
+//	Space      O(n log n)     O(n)           O(n)
+//	Ops        idempotent     any assoc.     invertible
+//
+// So: static data plus a huge number of min/max queries -> sparse table.
+// Anything that changes -> segment tree.
+type SparseTable struct {
+	op        func(a, b int) int
+	log2Floor []int
+	table     [][]int
+}
+
+// NewSparseTable builds the table. O(n log n) time and space.
+func NewSparseTable(values []int, op func(a, b int) int) *SparseTable {
+	n := len(values)
+
+	// log2Floor[i] = floor(log2(i)), computed once so queries stay O(1).
+	// math.Log2 per query would work but drags floating point into an integer
+	// algorithm, and it is famously off by one near powers of two.
+	log2Floor := make([]int, n+1)
+	for i := 2; i <= n; i++ {
+		log2Floor[i] = log2Floor[i/2] + 1
+	}
+
+	levels := 1
+	if n > 0 {
+		levels = log2Floor[n] + 1
+	}
+
+	table := make([][]int, levels)
+	table[0] = append([]int(nil), values...) // copy, do not alias the caller
+
+	for k := 1; k < levels; k++ {
+		span := 1 << k
+		half := span >> 1
+		table[k] = make([]int, n-span+1)
+		for i := 0; i+span <= n; i++ {
+			table[k][i] = op(table[k-1][i], table[k-1][i+half])
+		}
+	}
+
+	return &SparseTable{op: op, log2Floor: log2Floor, table: table}
+}
+
+// Query returns op over values[left:right] - right exclusive. O(1).
+//
+// Returns an error on an empty range: there is no identity to return, since op
+// is caller-supplied.
+func (s *SparseTable) Query(left, right int) (int, error) {
+	if left >= right {
+		return 0, fmt.Errorf("sparse table query needs a non-empty range, got [%d, %d)",
+			left, right)
+	}
+	k := s.log2Floor[right-left]
+	// Two overlapping blocks of length 2^k. The overlap is why op must be
+	// idempotent - see above.
+	return s.op(s.table[k][left], s.table[k][right-(1<<k)]), nil
+}
+
 func assert(cond bool, msg string) {
 	if !cond {
 		panic("assertion failed: " + msg)
@@ -511,7 +613,93 @@ func main() {
 		}
 	}
 
+	// --- Sparse table ---------------------------------------------------------
+	// minOf and maxOf are the closures declared for the segment tree above -
+	// the min/max builtins cannot be passed as function VALUES, only called.
+	gcdOf := func(a, b int) int {
+		for b != 0 {
+			a, b = b, a%b
+		}
+		if a < 0 {
+			return -a
+		}
+		return a
+	}
+
+	sparseValues := []int{7, 2, 3, 0, 5, 10, 3, 12, 18}
+	mins := NewSparseTable(sparseValues, minOf)
+	got, err := mins.Query(0, len(sparseValues))
+	assert(err == nil && got == 0, "min over the whole array")
+	got, _ = mins.Query(0, 1)
+	assert(got == 7, "a single element")
+	got, _ = mins.Query(4, 7)
+	assert(got == 3, "min of 5, 10, 3")
+
+	maxes := NewSparseTable(sparseValues, maxOf)
+	got, _ = maxes.Query(0, len(sparseValues))
+	assert(got == 18, "max over the whole array")
+	got, _ = maxes.Query(1, 4)
+	assert(got == 3, "max of 2, 3, 0")
+
+	gcds := NewSparseTable([]int{12, 18, 24, 36}, gcdOf)
+	got, _ = gcds.Query(0, 4)
+	assert(got == 6, "gcd of the whole array")
+	got, _ = gcds.Query(2, 4)
+	assert(got == 12, "gcd of 24, 36")
+
+	_, err = mins.Query(3, 3)
+	assert(err != nil, "an empty range is an error, not a silent zero")
+
+	// Every possible range, against brute force, for all three operations.
+	sparseRng := rand.New(rand.NewSource(19))
+	for trial := 0; trial < 40; trial++ {
+		n := sparseRng.Intn(40) + 1
+		data := make([]int, n)
+		positive := make([]int, n)
+		for i := range data {
+			data[i] = sparseRng.Intn(201) - 100
+			positive[i] = data[i]
+			if positive[i] < 0 {
+				positive[i] = -positive[i]
+			}
+			positive[i]++
+		}
+
+		minTable := NewSparseTable(data, minOf)
+		maxTable := NewSparseTable(data, maxOf)
+		gcdTable := NewSparseTable(positive, gcdOf)
+
+		for left := 0; left < n; left++ {
+			runMin, runMax, runGcd := data[left], data[left], positive[left]
+			for right := left + 1; right <= n; right++ {
+				if right-1 > left {
+					runMin = min(runMin, data[right-1])
+					runMax = max(runMax, data[right-1])
+					runGcd = gcdOf(runGcd, positive[right-1])
+				}
+				v, _ := minTable.Query(left, right)
+				assert(v == runMin, "sparse min matches brute force")
+				v, _ = maxTable.Query(left, right)
+				assert(v == runMax, "sparse max matches brute force")
+				v, _ = gcdTable.Query(left, right)
+				assert(v == runGcd, "sparse gcd matches brute force")
+			}
+		}
+	}
+
+	// And the misuse the doc comment warns about: SUM is not idempotent, so the
+	// overlapping blocks double-count. Demonstrated rather than merely claimed.
+	sums := NewSparseTable([]int{1, 2, 3, 4, 5}, func(a, b int) int { return a + b })
+	got, _ = sums.Query(0, 3)
+	assert(got == 8, "(1+2)+(2+3): the 2 is counted twice, not 6")
+	got, _ = sums.Query(0, 4)
+	assert(got == 20, "both blocks ARE [0,4): 10+10, not 10")
+	got, _ = sums.Query(2, 3)
+	assert(got == 6, "even ONE element doubles: op(x, x) != x")
+
 	fmt.Println("19-Advanced-Topics (Go): all checks passed")
+	fmt.Println("  Sparse table checked on EVERY range of 40 random arrays for min,")
+	fmt.Println("  max and gcd - and shown to double-count for a non-idempotent op")
 	fmt.Println("  Union-Find, Fenwick, segment tree and lazy propagation all " +
 		"cross-checked against brute force on 50 random runs each")
 }

@@ -88,6 +88,54 @@ and push it down only when a query descends into it.
 | `SegmentTree.Query` / `Update` | `O(log n)` | `O(log n)` stack |
 | `LazySegmentTree.RangeAdd` / `RangeSum` | `O(log n)` | `O(4n)` |
 
+## 6. Sparse table - `O(1)` queries, zero updates
+
+A segment tree answers a range query by stitching together `O(log n)`
+**disjoint** blocks. A sparse table answers it with just **two** blocks - which
+are allowed to **overlap**.
+
+```text
+table[k][i] = the answer for the block of length 2^k starting at i
+table[k][i] = op(table[k-1][i], table[k-1][i + 2^(k-1)])
+```
+
+`log n` levels of `n` entries: `O(n log n)` to build, `O(n log n)` space.
+
+For a query on `[left, right)` take `k = floor(log2(right - left))`. Two blocks
+of length `2^k`, one anchored at each end, always cover the range:
+
+```text
+[left ............................ right)
+[--- 2^k ---]
+             [--- 2^k ---]        <- these two OVERLAP in the middle
+```
+
+> **This only works for IDEMPOTENT operations** - ones where `op(x, x) == x`.
+> The blocks overlap, so the middle elements are counted twice.
+>
+> | Works | Broken |
+> |-------|--------|
+> | min, max, gcd, lcm, AND, OR | sum, product, xor, count |
+>
+> It is not "slightly off" for a sum - it is wrong for *every* range, including
+> a single element, where both blocks are the same element. The demo asserts
+> exactly that, so the failure mode is visible rather than described.
+
+### Choosing between the three
+
+| | Sparse table | Segment tree | Fenwick tree |
+|---|---|---|---|
+| Query | **`O(1)`** | `O(log n)` | `O(log n)` |
+| Update | **impossible** | `O(log n)` | `O(log n)` |
+| Build | `O(n log n)` | `O(n)` | `O(n log n)` |
+| Space | `O(n log n)` | `O(n)` | **`O(n)`** |
+| Operations | idempotent only | any associative | invertible only |
+
+Static data plus a huge number of min/max queries -> sparse table. Anything that
+changes -> segment tree.
+
+---
+
 ## Run the code
 
 ```bash

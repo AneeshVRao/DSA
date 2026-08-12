@@ -23,6 +23,15 @@ Fenwick or segment tree. "Range min/max" -> segment tree (a BIT cannot do it).
 | 11 | The Skyline Problem | Segment tree, or a heap sweep. | [LeetCode 218](https://leetcode.com/problems/the-skyline-problem/) |
 | 12 | Falling Squares | Segment tree with lazy propagation. | [LeetCode 699](https://leetcode.com/problems/falling-squares/) |
 
+## Sparse table
+| Problem | Hint | Link |
+|---------|------|------|
+| Range Minimum Query | The canonical use - build once, answer in O(1). | [GfG](https://www.geeksforgeeks.org/problems/range-minimum-query/1) |
+| Sliding Window Maximum | A monotonic deque is better here; try both and compare. | [LeetCode 239](https://leetcode.com/problems/sliding-window-maximum/) |
+| Longest Nice Subarray | Bitwise AND over a window - idempotent, so a sparse table fits. | [LeetCode 2401](https://leetcode.com/problems/longest-nice-subarray/) |
+| Maximum of Minimum for Every Window Size | Static array, many range minimums. | [GfG](https://www.geeksforgeeks.org/problems/maximum-of-minimum-for-every-window-size3453/1) |
+| Number of Subarrays With GCD Equal to K | gcd is idempotent, so ranges are O(1). | [LeetCode 2447](https://leetcode.com/problems/number-of-subarrays-with-gcd-equal-to-k/) |
+
 ## Self-check before moving on
 
 - [ ] I can implement DSU with path compression and union by size.
@@ -30,3 +39,6 @@ Fenwick or segment tree. "Range min/max" -> segment tree (a BIT cannot do it).
 - [ ] I can write a Fenwick tree from memory and explain `i & -i`.
 - [ ] I size segment trees as `4n` and know why.
 - [ ] I understand what lazy propagation defers and when it is pushed down.
+- [ ] I know a sparse table answers in O(1) but supports no updates at all.
+- [ ] I can say why the two query blocks are allowed to overlap.
+- [ ] I know it is WRONG for sum/xor - and wrong even for a one-element range.

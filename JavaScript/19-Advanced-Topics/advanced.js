@@ -306,6 +306,98 @@ export class LazySegmentTree {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 5. Sparse table - O(1) range queries on data that never changes
+// ============================================================================
+/**
+ * O(n log n) build, then range min/max/gcd in O(1). No updates.
+ *
+ * A segment tree answers a range query in O(log n) by stitching together
+ * O(log n) DISJOINT blocks. A sparse table answers it in O(1) by covering the
+ * range with just TWO blocks - which are allowed to OVERLAP.
+ *
+ * THE PRECOMPUTE. table[k][i] holds the answer for the block of length 2^k
+ * starting at i. Each level is built from the one below by joining two
+ * half-length blocks:
+ *
+ *     table[k][i] = op(table[k-1][i], table[k-1][i + 2^(k-1)])
+ *
+ * log n levels of n entries each: O(n log n) time and space.
+ *
+ * THE QUERY. For [left, right), let k = floor(log2(right - left)). Two blocks
+ * of length 2^k - one anchored at each end - always cover the range, because
+ * 2 * 2^k >= right - left by the choice of k:
+ *
+ *     [left ............................ right)
+ *     [--- 2^k ---]
+ *                  [--- 2^k ---]        <- these two OVERLAP in the middle
+ *
+ * THE CATCH, AND IT IS THE WHOLE POINT. Those blocks overlap, so elements in
+ * the middle are counted TWICE. That is harmless only if the operation is
+ * IDEMPOTENT - op(x, x) == x:
+ *
+ *     min, max, gcd, lcm, bitwise and, bitwise or   -> idempotent, works
+ *     sum, product, xor, count                      -> NOT, gives nonsense
+ *
+ * For a sum use a prefix-sum array (static) or a Fenwick tree (dynamic). This
+ * is the single most common misuse of the structure - and note it is broken
+ * even for a ONE-element range, where both blocks are the same element.
+ *
+ *                Sparse table   Segment tree   Fenwick tree
+ *     Query      O(1)           O(log n)       O(log n)
+ *     Update     impossible     O(log n)       O(log n)
+ *     Build      O(n log n)     O(n)           O(n log n)
+ *     Space      O(n log n)     O(n)           O(n)
+ *     Ops        idempotent     any assoc.     invertible
+ *
+ * So: static data plus a huge number of min/max queries -> sparse table.
+ * Anything that changes -> segment tree.
+ */
+export class SparseTable {
+  #op;
+  #log2Floor;
+  #table;
+
+  constructor(values, op = Math.min) {
+    this.#op = op;
+    const n = values.length;
+
+    // log2Floor[i] = floor(log2(i)), computed once so queries stay O(1).
+    // Math.log2 per query would work but drags floating point into an integer
+    // algorithm, and it is famously off by one near powers of two.
+    this.#log2Floor = new Int32Array(n + 1);
+    for (let i = 2; i <= n; i++) this.#log2Floor[i] = this.#log2Floor[i >> 1] + 1;
+
+    const levels = n ? this.#log2Floor[n] + 1 : 1;
+    this.#table = [[...values]];
+
+    for (let k = 1; k < levels; k++) {
+      const span = 1 << k;
+      const half = span >> 1;
+      const previous = this.#table[k - 1];
+      const level = new Array(n - span + 1);
+      for (let i = 0; i + span <= n; i++) level[i] = op(previous[i], previous[i + half]);
+      this.#table.push(level);
+    }
+  }
+
+  /**
+   * op over `values[left, right)` - right exclusive. O(1).
+   *
+   * Throws on an empty range: there is no identity to return, since `op` is
+   * caller-supplied.
+   */
+  query(left, right) {
+    if (left >= right) {
+      throw new RangeError("sparse table query needs a non-empty range");
+    }
+    const k = this.#log2Floor[right - left];
+    // Two overlapping blocks of length 2^k. The overlap is why op must be
+    // idempotent - see above.
+    return this.#op(this.#table[k][left], this.#table[k][right - (1 << k)]);
+  }
+}
+
 function demo() {
   const dsu = new DisjointSet(10);
   assert.equal(dsu.count, 10);
@@ -448,7 +540,76 @@ function demo() {
     }
   }
 
+  // --- Sparse table ---------------------------------------------------------
+  const gcdOf = (a, b) => {
+    while (b) [a, b] = [b, a % b];
+    return Math.abs(a);
+  };
+
+  const sparseValues = [7, 2, 3, 0, 5, 10, 3, 12, 18];
+  const mins = new SparseTable(sparseValues, Math.min);
+  assert.equal(mins.query(0, sparseValues.length), 0);
+  assert.equal(mins.query(0, 1), 7); // a single element
+  assert.equal(mins.query(4, 7), 3); // 5, 10, 3
+  assert.equal(mins.query(7, 9), 12);
+
+  const maxes = new SparseTable(sparseValues, Math.max);
+  assert.equal(maxes.query(0, sparseValues.length), 18);
+  assert.equal(maxes.query(1, 4), 3); // 2, 3, 0
+
+  const gcds = new SparseTable([12, 18, 24, 36], gcdOf);
+  assert.equal(gcds.query(0, 4), 6);
+  assert.equal(gcds.query(2, 4), 12);
+
+  assert.throws(() => mins.query(3, 3), RangeError); // empty range
+
+  // Every possible range, against brute force, for all three operations.
+  let sparseSeed = 19;
+  const sparseRandom = () => {
+    sparseSeed = (sparseSeed * 1103515245 + 12345) & 0x7fffffff;
+    return sparseSeed / 0x7fffffff;
+  };
+
+  for (let trial = 0; trial < 40; trial++) {
+    const n = 1 + Math.floor(sparseRandom() * 40);
+    const data = Array.from({ length: n }, () =>
+      Math.floor(sparseRandom() * 201) - 100,
+    );
+    const positive = data.map((x) => Math.abs(x) + 1);
+
+    const minTable = new SparseTable(data, Math.min);
+    const maxTable = new SparseTable(data, Math.max);
+    const gcdTable = new SparseTable(positive, gcdOf);
+
+    for (let left = 0; left < n; left++) {
+      let runMin = data[left];
+      let runMax = data[left];
+      let runGcd = positive[left];
+      for (let right = left + 1; right <= n; right++) {
+        if (right - 1 > left) {
+          runMin = Math.min(runMin, data[right - 1]);
+          runMax = Math.max(runMax, data[right - 1]);
+          runGcd = gcdOf(runGcd, positive[right - 1]);
+        }
+        assert.equal(minTable.query(left, right), runMin);
+        assert.equal(maxTable.query(left, right), runMax);
+        assert.equal(gcdTable.query(left, right), runGcd);
+      }
+    }
+  }
+
+  // And the misuse the doc comment warns about: SUM is not idempotent, so the
+  // overlapping blocks double-count. Demonstrated rather than merely claimed.
+  const sums = new SparseTable([1, 2, 3, 4, 5], (a, b) => a + b);
+  assert.equal(sums.query(0, 3), 8); // (1+2) + (2+3): the 2 counted twice, not 6
+  assert.equal(sums.query(0, 4), 20); // both blocks ARE [0,4): 10 + 10, not 10
+  assert.equal(sums.query(2, 3), 6); // even ONE element doubles: op(x, x) != x
+
   console.log("19-Advanced-Topics (JavaScript): all checks passed");
+  console.log(
+    "  Sparse table checked on EVERY range of 40 random arrays for min,\n" +
+      "  max and gcd - and shown to double-count for a non-idempotent op",
+  );
   console.log(
     "  Union-Find, Fenwick, segment tree and lazy propagation all " +
       "cross-checked against brute force on 50 random runs each",

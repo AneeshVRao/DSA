@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <numeric>
@@ -267,6 +268,100 @@ class LazySegmentTree {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 5. Sparse table - O(1) range queries on data that never changes
+// ============================================================================
+
+// O(n log n) build, then range min/max/gcd in O(1). No updates.
+//
+// A segment tree answers a range query in O(log n) by stitching together
+// O(log n) DISJOINT blocks. A sparse table answers it in O(1) by covering the
+// range with just TWO blocks - which are allowed to OVERLAP.
+//
+// THE PRECOMPUTE. table[k][i] holds the answer for the block of length 2^k
+// starting at i. Each level is built from the one below by joining two
+// half-length blocks:
+//
+//     table[k][i] = op(table[k-1][i], table[k-1][i + 2^(k-1)])
+//
+// log n levels of n entries each: O(n log n) time and space.
+//
+// THE QUERY. For [left, right), let k = floor(log2(right - left)). Two blocks
+// of length 2^k - one anchored at each end - always cover the range, because
+// 2 * 2^k >= right - left by the choice of k:
+//
+//     [left ............................ right)
+//     [--- 2^k ---]
+//                  [--- 2^k ---]        <- these two OVERLAP in the middle
+//
+// THE CATCH, AND IT IS THE WHOLE POINT. Those blocks overlap, so elements in
+// the middle are counted TWICE. That is harmless only if the operation is
+// IDEMPOTENT - op(x, x) == x:
+//
+//     min, max, gcd, lcm, bitwise and, bitwise or   -> idempotent, works
+//     sum, product, xor, count                      -> NOT, gives nonsense
+//
+// For a sum use a prefix-sum array (static) or a Fenwick tree (dynamic). This
+// is the single most common misuse of the structure - and note it is broken
+// even for a ONE-element range, where both blocks are the same element.
+//
+//                Sparse table   Segment tree   Fenwick tree
+//     Query      O(1)           O(log n)       O(log n)
+//     Update     impossible     O(log n)       O(log n)
+//     Build      O(n log n)     O(n)           O(n log n)
+//     Space      O(n log n)     O(n)           O(n)
+//     Ops        idempotent     any assoc.     invertible
+//
+// So: static data plus a huge number of min/max queries -> sparse table.
+// Anything that changes -> segment tree.
+class SparseTable {
+   public:
+    explicit SparseTable(const vector<long long>& values,
+                         function<long long(long long, long long)> op =
+                             [](long long a, long long b) { return min(a, b); })
+        : op_(std::move(op)) {
+        size_t n = values.size();
+
+        // log2Floor_[i] = floor(log2(i)), computed once so queries stay O(1).
+        // Calling std::log2 per query would work but drags floating point into
+        // an integer algorithm, and it is famously off by one near powers of two.
+        log2Floor_.assign(n + 1, 0);
+        for (size_t i = 2; i <= n; i++) log2Floor_[i] = log2Floor_[i / 2] + 1;
+
+        size_t levels = n ? log2Floor_[n] + 1 : 1;
+        table_.assign(levels, {});
+        table_[0] = values;
+
+        for (size_t k = 1; k < levels; k++) {
+            size_t span = size_t(1) << k;
+            size_t half = span >> 1;
+            table_[k].resize(n - span + 1);
+            for (size_t i = 0; i + span <= n; i++) {
+                table_[k][i] = op_(table_[k - 1][i], table_[k - 1][i + half]);
+            }
+        }
+    }
+
+    // op over values[left, right) - right exclusive. O(1).
+    //
+    // Throws on an empty range: there is no identity to return, since op is
+    // caller-supplied.
+    long long query(size_t left, size_t right) const {
+        if (left >= right) {
+            throw invalid_argument("sparse table query needs a non-empty range");
+        }
+        size_t k = log2Floor_[right - left];
+        // Two overlapping blocks of length 2^k. The overlap is why op must be
+        // idempotent - see above.
+        return op_(table_[k][left], table_[k][right - (size_t(1) << k)]);
+    }
+
+   private:
+    function<long long(long long, long long)> op_;
+    vector<size_t> log2Floor_;
+    vector<vector<long long>> table_;
+};
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -413,7 +508,74 @@ int main() {
     }
 
     cout << "19-Advanced-Topics (C++): all checks passed\n";
+    // --- Sparse table ---------------------------------------------------------
+    auto minOp = [](long long a, long long b) { return min(a, b); };
+    auto maxOp = [](long long a, long long b) { return max(a, b); };
+    auto gcdOp = [](long long a, long long b) { return std::gcd(a, b); };
+
+    vector<long long> sparseValues{7, 2, 3, 0, 5, 10, 3, 12, 18};
+    SparseTable mins(sparseValues, minOp);
+    assert(mins.query(0, sparseValues.size()) == 0);
+    assert(mins.query(0, 1) == 7);                  // a single element
+    assert(mins.query(4, 7) == 3);                  // 5, 10, 3
+    assert(mins.query(7, 9) == 12);
+
+    SparseTable maxes(sparseValues, maxOp);
+    assert(maxes.query(0, sparseValues.size()) == 18);
+    assert(maxes.query(1, 4) == 3);                 // 2, 3, 0
+
+    SparseTable gcds(vector<long long>{12, 18, 24, 36}, gcdOp);
+    assert(gcds.query(0, 4) == 6);
+    assert(gcds.query(2, 4) == 12);
+
+    bool threwEmpty = false;
+    try {
+        mins.query(3, 3);                           // empty range
+    } catch (const invalid_argument&) {
+        threwEmpty = true;
+    }
+    assert(threwEmpty);
+
+    // Every possible range, against brute force, for all three operations.
+    mt19937 sparseRng(19);
+    for (int trial = 0; trial < 40; trial++) {
+        size_t n = sparseRng() % 40 + 1;
+        vector<long long> data(n), positive(n);
+        for (size_t i = 0; i < n; i++) {
+            data[i] = static_cast<long long>(sparseRng() % 201) - 100;
+            positive[i] = llabs(data[i]) + 1;
+        }
+
+        SparseTable minTable(data, minOp);
+        SparseTable maxTable(data, maxOp);
+        SparseTable gcdTable(positive, gcdOp);
+
+        for (size_t left = 0; left < n; left++) {
+            long long runMin = data[left], runMax = data[left], runGcd = positive[left];
+            for (size_t right = left + 1; right <= n; right++) {
+                if (right - 1 > left) {
+                    runMin = min(runMin, data[right - 1]);
+                    runMax = max(runMax, data[right - 1]);
+                    runGcd = std::gcd(runGcd, positive[right - 1]);
+                }
+                assert(minTable.query(left, right) == runMin);
+                assert(maxTable.query(left, right) == runMax);
+                assert(gcdTable.query(left, right) == runGcd);
+            }
+        }
+    }
+
+    // And the misuse the comment warns about: SUM is not idempotent, so the
+    // overlapping blocks double-count. Demonstrated rather than merely claimed.
+    SparseTable sums(vector<long long>{1, 2, 3, 4, 5},
+                     [](long long a, long long b) { return a + b; });
+    assert(sums.query(0, 3) == 8);   // (1+2) + (2+3): the 2 is counted twice, not 6
+    assert(sums.query(0, 4) == 20);  // both blocks ARE [0,4): 10 + 10, not 10
+    assert(sums.query(2, 3) == 6);   // even ONE element doubles: op(x, x) != x
+
     cout << "  Union-Find, Fenwick, segment tree and lazy propagation all "
             "cross-checked against brute force on 50 random runs each\n";
+    cout << "  Sparse table checked on EVERY range of 40 random arrays for min,\n";
+    cout << "  max and gcd - and shown to double-count for a non-idempotent op\n";
     return 0;
 }
