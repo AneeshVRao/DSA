@@ -3,6 +3,17 @@
 > Union-Find, Fenwick trees and segment trees. Three structures that turn
 > "recompute it every time" into "update it in `O(log n)`".
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Structures that turn "recompute it every time" into "update it in `O(log n)`". |
+| **Must know** | Fenwick = invertible ops. Segment tree = any associative op. Sparse table = idempotent, no updates. |
+| **The one trap** | Using a sparse table for sums. The two query blocks overlap, so it double-counts. |
+| **Reach for it when** | Many range queries over the same data, or connectivity that changes over time. |
+
+---
+
 ## 1. Union-Find (Disjoint Set Union)
 
 Maintains a partition of `n` elements:
@@ -147,3 +158,7 @@ node advanced.js
 
 Every structure is cross-checked against brute force on hundreds of random
 operations - the only honest way to trust index arithmetic this fiddly.
+
+---
+
+[<- 18 Trie](../18-Trie/) · [All topics](../../README.md) · [20 Math & Number Theory ->](../20-Math-and-Number-Theory/)

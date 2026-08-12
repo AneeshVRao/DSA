@@ -3,6 +3,17 @@
 > A hash map tells you whether a word exists. A trie tells you what could come
 > next - and in C++ you get to choose exactly how the children are stored.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | A tree keyed on characters, so shared prefixes are stored exactly once. |
+| **Must know** | Lookup is `O(length)` - **independent** of how many words are stored. |
+| **The one trap** | Forgetting the end-of-word marker. Without it "car" and "card" are indistinguishable. |
+| **Reach for it when** | Prefix queries, autocomplete, wildcard matching, maximum XOR pairs. |
+
+---
+
 ## 1. The structure
 
 A trie stores strings by **sharing prefixes**. Each edge is a character; each
@@ -116,3 +127,7 @@ string).
 ```bash
 g++ -std=c++17 -O2 -Wall trie.cpp -o trie && ./trie
 ```
+
+---
+
+[<- 17 Bit Manipulation](../17-Bit-Manipulation/) · [All topics](../../README.md) · [19 Advanced Topics ->](../19-Advanced-Topics/)

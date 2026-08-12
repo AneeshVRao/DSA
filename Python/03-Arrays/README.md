@@ -3,6 +3,17 @@
 > An array is a block of contiguous memory. That single fact explains every one
 > of its costs.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Contiguous memory. The structure everything else is built out of. |
+| **Must know** | Index `O(1)`, insert/delete in the middle `O(n)`, append amortised `O(1)`. |
+| **The one trap** | Mutating a list while iterating over it - indices shift underneath you. |
+| **Reach for it when** | "Contiguous subarray", "in place", "two pointers", "sliding window". |
+
+---
+
 ## 1. What an array is
 
 Elements sit next to each other in memory, so the address of index `i` is
@@ -144,3 +155,7 @@ start fresh here".
 ```bash
 python arrays.py
 ```
+
+---
+
+[<- 02 Complexity](../02-Time-Space-Complexity/) · [All topics](../../README.md) · [04 Strings ->](../04-Strings/)

@@ -2,6 +2,17 @@
 
 > Modern ES6+ JavaScript, aimed squarely at data structures and algorithms.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The container costs and idioms every later chapter quietly assumes. |
+| **Must know** | Index `O(1)`, insert-at-front `O(n)`, hash lookup `O(1)` average, sort `O(n log n)`. |
+| **The one trap** | Reaching for a list where a hash set was needed - it turns `O(n)` into `O(n^2)`. |
+| **Reach for it when** | Before anything else. Every later chapter is built on these costs. |
+
+---
+
 ## Why this chapter exists
 
 JavaScript has no built-in heap, no built-in sorted map, and a `sort()` that
@@ -160,3 +171,7 @@ Number.MAX_SAFE_INTEGER;  // 2^53 - 1 = 9007199254740991
 ```bash
 node basics.js
 ```
+
+---
+
+[All topics](../../README.md) · [02 Complexity ->](../02-Time-Space-Complexity/)

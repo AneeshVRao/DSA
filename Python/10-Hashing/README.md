@@ -3,6 +3,17 @@
 > A hash table turns "search" into "compute an address". That is how `O(n)`
 > lookups become `O(1)`.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | `O(1)` average lookup, bought with memory. |
+| **Must know** | Chaining vs open addressing, load factor, and why rehashing stays amortised `O(1)`. |
+| **The one trap** | `O(1)` is an **average**. Bad or adversarial hashes degrade it to `O(n)`. |
+| **Reach for it when** | "Have I seen this before", frequency counts, complement lookup, grouping. |
+
+---
+
 ## 1. The idea
 
 ```
@@ -140,3 +151,7 @@ ranges.
 ```bash
 python hashing.py
 ```
+
+---
+
+[<- 09 Sorting](../09-Sorting/) · [All topics](../../README.md) · [11 Trees ->](../11-Trees/)

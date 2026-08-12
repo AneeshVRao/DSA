@@ -3,6 +3,17 @@
 > Two containers, one difference: which end you take from. That single choice
 > decides whether you get DFS or BFS, undo or scheduling.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The two access disciplines: last-in-first-out and first-in-first-out. |
+| **Must know** | Both are `O(1)` per operation - **when backed by the right structure**. |
+| **The one trap** | Popping from the front of an array. That is `O(n)`, and it is silent. |
+| **Reach for it when** | Matching and nesting -> stack. Level-by-level or fairness -> queue. |
+
+---
+
 ## 1. Definitions
 
 | | Stack | Queue |
@@ -119,3 +130,7 @@ Postfix expressions, `cd ..` path resolution, string decoding.
 ```bash
 python stack_queue.py
 ```
+
+---
+
+[<- 05 Linked List](../05-Linked-List/) · [All topics](../../README.md) · [07 Recursion & Backtracking ->](../07-Recursion-Backtracking/)

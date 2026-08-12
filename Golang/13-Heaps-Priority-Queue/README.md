@@ -3,6 +3,17 @@
 > Go ships `container/heap`, but it is a *mixin*, not a container: you supply
 > the storage and the ordering, and it supplies the algorithms.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | `O(1)` access to the extreme element, `O(log n)` to change it. |
+| **Must know** | For the k **largest**, keep a **min**-heap of size k. That is the whole trick. |
+| **The one trap** | A heap is not sorted. Only the root is guaranteed - the rest is partial order. |
+| **Reach for it when** | "Top k", "merge k sorted", "running median", schedulers. |
+
+---
+
 ## 1. The heap property
 
 A **min-heap** is a *complete* binary tree where every parent is <= its
@@ -175,3 +186,7 @@ is revised, and LRU/LFU caches with an evictable score per key.
 ```bash
 go run heaps.go
 ```
+
+---
+
+[<- 12 Binary Search Tree](../12-Binary-Search-Tree/) · [All topics](../../README.md) · [14 Graphs ->](../14-Graphs/)

@@ -4,6 +4,17 @@
 > V8 *usually* optimises into a real contiguous buffer. Knowing when it stops
 > doing that is the whole performance story.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Contiguous memory. The structure everything else is built out of. |
+| **Must know** | Index `O(1)`, insert/delete in the middle `O(n)`, append amortised `O(1)`. |
+| **The one trap** | Mutating a list while iterating over it - indices shift underneath you. |
+| **Reach for it when** | "Contiguous subarray", "in place", "two pointers", "sliding window". |
+
+---
+
 ## 1. How V8 stores arrays
 
 V8 keeps two representations:
@@ -147,3 +158,7 @@ a.toSorted((x, y) => x - y);    // ES2023: sorted COPY, does not mutate
 ```bash
 node arrays.js
 ```
+
+---
+
+[<- 02 Complexity](../02-Time-Space-Complexity/) · [All topics](../../README.md) · [04 Strings ->](../04-Strings/)

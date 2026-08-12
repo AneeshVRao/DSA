@@ -3,6 +3,17 @@
 > C++ buys you a constant factor of roughly 50x over Python. It does not buy
 > you a better asymptotic class - and the judge tests the class.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | How to predict runtime **before** writing the code. |
+| **Must know** | Drop constants, keep the dominant term. A recursion tree costs `branches^depth`. |
+| **The one trap** | Counting only the data and forgetting the call stack and the copies. |
+| **Reach for it when** | Every time you read a constraint line - `n <= 10^5` already names the algorithm. |
+
+---
+
 ## 1. What Big-O actually says
 
 Big-O describes how cost **grows** with input size, dropping constants and
@@ -123,3 +134,7 @@ g++ -std=c++17 -O2 -Wall complexity.cpp -o complexity && ./complexity
 
 The program counts operations rather than timing, so the growth is exact and
 identical on every machine.
+
+---
+
+[<- 01 Basics & Syntax](../01-Basics-and-Syntax/) · [All topics](../../README.md) · [03 Arrays ->](../03-Arrays/)

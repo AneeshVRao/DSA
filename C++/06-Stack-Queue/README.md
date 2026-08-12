@@ -3,6 +3,17 @@
 > The STL gives you both as **container adaptors** - thin wrappers that
 > restrict a real container to one access pattern.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The two access disciplines: last-in-first-out and first-in-first-out. |
+| **Must know** | Both are `O(1)` per operation - **when backed by the right structure**. |
+| **The one trap** | Popping from the front of an array. That is `O(n)`, and it is silent. |
+| **Reach for it when** | Matching and nesting -> stack. Level-by-level or fairness -> queue. |
+
+---
+
 ## 1. Definitions
 
 | | Stack | Queue |
@@ -118,3 +129,7 @@ smaller than the arriving element.
 ```bash
 g++ -std=c++17 -O2 -Wall stack_queue.cpp -o stack_queue && ./stack_queue
 ```
+
+---
+
+[<- 05 Linked List](../05-Linked-List/) · [All topics](../../README.md) · [07 Recursion & Backtracking ->](../07-Recursion-Backtracking/)

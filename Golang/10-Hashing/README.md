@@ -3,6 +3,17 @@
 > Go's `map` is a hash table with one deliberate design decision that trips
 > everyone up: iteration order is **randomised on purpose**.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | `O(1)` average lookup, bought with memory. |
+| **Must know** | Chaining vs open addressing, load factor, and why rehashing stays amortised `O(1)`. |
+| **The one trap** | `O(1)` is an **average**. Bad or adversarial hashes degrade it to `O(n)`. |
+| **Reach for it when** | "Have I seen this before", frequency counts, complement lookup, grouping. |
+
+---
+
 ## 1. The idea
 
 ```
@@ -121,3 +132,7 @@ anagrams with no string encoding at all. Slices are not comparable, so
 ```bash
 go run hashing.go
 ```
+
+---
+
+[<- 09 Sorting](../09-Sorting/) · [All topics](../../README.md) · [11 Trees ->](../11-Trees/)

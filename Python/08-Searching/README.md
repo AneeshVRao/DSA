@@ -3,6 +3,17 @@
 > Binary search is the highest value-per-line algorithm you will ever learn -
 > and the one people most reliably get wrong.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Discarding half the search space per step. |
+| **Must know** | Binary search needs a **monotone predicate**, not merely sorted data. |
+| **The one trap** | The `lo <= hi` vs `lo < hi` boundary. Pick one convention and never mix them. |
+| **Reach for it when** | Sorted input, or anything phrased as "the smallest x such that ...". |
+
+---
+
 ## 1. Linear search
 
 Check every element: `O(n)`, works on **any** sequence, sorted or not. It is
@@ -189,3 +200,7 @@ optimisation problems phrased as "find the best k".
 ```bash
 python searching.py
 ```
+
+---
+
+[<- 07 Recursion & Backtracking](../07-Recursion-Backtracking/) · [All topics](../../README.md) · [09 Sorting ->](../09-Sorting/)

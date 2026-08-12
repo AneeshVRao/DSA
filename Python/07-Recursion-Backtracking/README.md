@@ -3,6 +3,17 @@
 > Recursion is a function that solves a smaller version of its own problem.
 > Backtracking is recursion that undoes its choices.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Solve by shrinking. Backtracking adds choose -> explore -> **un-choose**. |
+| **Must know** | Every recursion needs a base case that is actually reachable from the input. |
+| **The one trap** | Forgetting to un-choose, so state leaks from one branch into the next. |
+| **Reach for it when** | "All permutations / subsets / combinations", grid search, parsing. |
+
+---
+
 ## 1. Anatomy of a recursive function
 
 ```python
@@ -128,3 +139,7 @@ completed path into the results.
 ```bash
 python recursion.py
 ```
+
+---
+
+[<- 06 Stack & Queue](../06-Stack-Queue/) · [All topics](../../README.md) · [08 Searching ->](../08-Searching/)

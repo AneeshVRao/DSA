@@ -3,6 +3,17 @@
 > Go has a tiny feature set on purpose. That makes it excellent for DSA:
 > there is usually exactly one way to write something.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The container costs and idioms every later chapter quietly assumes. |
+| **Must know** | Index `O(1)`, insert-at-front `O(n)`, hash lookup `O(1)` average, sort `O(n log n)`. |
+| **The one trap** | Reaching for a list where a hash set was needed - it turns `O(n)` into `O(n^2)`. |
+| **Reach for it when** | Before anything else. Every later chapter is built on these costs. |
+
+---
+
 ## Why this chapter exists
 
 Go gives you slices, maps and goroutines, and almost nothing else. No generics
@@ -175,3 +186,7 @@ panic("unreachable")   // reserve panic for genuinely impossible states
 ```bash
 go run basics.go
 ```
+
+---
+
+[All topics](../../README.md) · [02 Complexity ->](../02-Time-Space-Complexity/)

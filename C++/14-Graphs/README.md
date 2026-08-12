@@ -3,6 +3,17 @@
 > Trees were graphs with training wheels. Remove the "no cycles" guarantee and
 > everything needs a `visited` array.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Everything else, with cycles allowed - so every traversal needs a `visited` set. |
+| **Must know** | BFS = shortest path unweighted. Dijkstra = non-negative weights. Bellman-Ford = negatives. |
+| **The one trap** | Marking visited on **dequeue**. Mark on *enqueue*, or the work blows up. |
+| **Reach for it when** | Connections, dependencies, reachability - and every grid, which is a graph in disguise. |
+
+---
+
 ## 1. Vocabulary
 
 | Term | Meaning |
@@ -204,3 +215,7 @@ as vertices - no adjacency list needed.
 ```bash
 g++ -std=c++17 -O2 -Wall graphs.cpp -o graphs && ./graphs
 ```
+
+---
+
+[<- 13 Heaps & Priority Queue](../13-Heaps-Priority-Queue/) · [All topics](../../README.md) · [15 Dynamic Programming ->](../15-Dynamic-Programming/)

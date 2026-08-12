@@ -3,6 +3,17 @@
 > DP is recursion that refuses to compute the same thing twice. In JS you also
 > have to watch the 10k-frame stack and the 2^53 integer ceiling.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Recursion plus memory, for when subproblems overlap. |
+| **Must know** | Define the **state** precisely, then the transition, then the fill order. In that order. |
+| **The one trap** | Iterating capacity upwards turns 0/1 knapsack into the unbounded version, silently. |
+| **Reach for it when** | "Count the ways", "min/max cost", "is it possible" - over choices with structure. |
+
+---
+
 ## 1. When DP applies
 
 Both must hold:
@@ -183,3 +194,7 @@ item be used twice, silently producing the unbounded answer.
 ```bash
 node dp.js
 ```
+
+---
+
+[<- 14 Graphs](../14-Graphs/) · [All topics](../../README.md) · [16 Greedy ->](../16-Greedy/)

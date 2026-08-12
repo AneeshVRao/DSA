@@ -3,6 +3,17 @@
 > No manual memory management, but the same pointer discipline: lose a
 > reference and the garbage collector eats the rest of your list.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Pointers instead of contiguity: cheap splicing, no random access. |
+| **Must know** | Insert/delete `O(1)` **given the node**, but `O(n)` to find it first. |
+| **The one trap** | Losing the tail - save `next` *before* rewiring a pointer. |
+| **Reach for it when** | The problem hands you a head pointer, or `O(1)` splicing is the point. |
+
+---
+
 ## 1. The structure
 
 ```
@@ -127,3 +138,7 @@ for (const v of list) {} // clean traversal
 ```bash
 node linked_list.js
 ```
+
+---
+
+[<- 04 Strings](../04-Strings/) · [All topics](../../README.md) · [06 Stack & Queue ->](../06-Stack-Queue/)

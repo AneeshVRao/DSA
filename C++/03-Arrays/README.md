@@ -3,6 +3,17 @@
 > C++ is where "array" is literal: a contiguous block of memory you can point
 > into. Everything about its performance follows from that.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Contiguous memory. The structure everything else is built out of. |
+| **Must know** | Index `O(1)`, insert/delete in the middle `O(n)`, append amortised `O(1)`. |
+| **The one trap** | Mutating a list while iterating over it - indices shift underneath you. |
+| **Reach for it when** | "Contiguous subarray", "in place", "two pointers", "sliding window". |
+
+---
+
 ## 1. Three kinds of array
 
 | Form | Declaration | Size | Lives on |
@@ -146,3 +157,7 @@ and returns the new logical end; it cannot change the container's size.
 ```bash
 g++ -std=c++17 -O2 -Wall arrays.cpp -o arrays && ./arrays
 ```
+
+---
+
+[<- 02 Complexity](../02-Time-Space-Complexity/) · [All topics](../../README.md) · [04 Strings ->](../04-Strings/)

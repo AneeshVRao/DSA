@@ -3,6 +3,17 @@
 > Go's `sort` package makes the stable/unstable distinction explicit in the
 > function name. That is a good habit to copy into your own thinking.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The `O(n log n)` barrier, and the two ways of getting under it. |
+| **Must know** | Comparison sorts cannot beat `O(n log n)`. Counting and radix can, by not comparing. |
+| **The one trap** | Assuming your language's sort is stable. Some are, some are not. |
+| **Reach for it when** | Sorting is usually the *preprocessing* step for greedy, two pointers or intervals. |
+
+---
+
 ## 1. The three properties
 
 - **Stable** - equal elements keep their relative order.
@@ -105,3 +116,7 @@ go run sorting.go
 ```
 
 Every algorithm is verified against `sort.Ints` on 200 random slices.
+
+---
+
+[<- 08 Searching](../08-Searching/) · [All topics](../../README.md) · [10 Hashing ->](../10-Hashing/)

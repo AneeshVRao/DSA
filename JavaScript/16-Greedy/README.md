@@ -3,6 +3,17 @@
 > Greedy takes the best-looking option now and never reconsiders. The skill is
 > knowing when that is safe.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Take the locally best choice and never reconsider it. |
+| **Must know** | It requires a **proof** - usually an exchange argument. It is not a default strategy. |
+| **The one trap** | Assuming greedy works because it passed the sample cases. It often does not. |
+| **Reach for it when** | Intervals, scheduling, Huffman - and only after sorting by the *right* key. |
+
+---
+
 ## 1. The two conditions
 
 1. **Greedy choice property** - a locally optimal choice belongs to *some*
@@ -100,3 +111,7 @@ fill the capacity exactly, restoring the greedy choice property.
 ```bash
 node greedy.js
 ```
+
+---
+
+[<- 15 Dynamic Programming](../15-Dynamic-Programming/) · [All topics](../../README.md) · [17 Bit Manipulation ->](../17-Bit-Manipulation/)

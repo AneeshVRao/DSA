@@ -3,6 +3,17 @@
 > A hash map tells you whether a word exists. A trie tells you what could come
 > next. That difference is worth a whole data structure.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | A tree keyed on characters, so shared prefixes are stored exactly once. |
+| **Must know** | Lookup is `O(length)` - **independent** of how many words are stored. |
+| **The one trap** | Forgetting the end-of-word marker. Without it "car" and "card" are indistinguishable. |
+| **Reach for it when** | Prefix queries, autocomplete, wildcard matching, maximum XOR pairs. |
+
+---
+
 ## 1. The structure
 
 A trie (prefix tree) stores strings by **sharing their prefixes**. Each edge is
@@ -113,3 +124,7 @@ Compressed variants exist for exactly this reason:
 ```bash
 python trie.py
 ```
+
+---
+
+[<- 17 Bit Manipulation](../17-Bit-Manipulation/) · [All topics](../../README.md) · [19 Advanced Topics ->](../19-Advanced-Topics/)

@@ -3,6 +3,17 @@
 > Go draws a hard line between an **array** (fixed size, a value) and a
 > **slice** (a view onto an array, what you actually use).
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Contiguous memory. The structure everything else is built out of. |
+| **Must know** | Index `O(1)`, insert/delete in the middle `O(n)`, append amortised `O(1)`. |
+| **The one trap** | Mutating a list while iterating over it - indices shift underneath you. |
+| **Reach for it when** | "Contiguous subarray", "in place", "two pointers", "sliding window". |
+
+---
+
 ## 1. Arrays vs slices
 
 ```go
@@ -152,3 +163,7 @@ they do underneath, which is what `arrays.go` shows.
 ```bash
 go run arrays.go
 ```
+
+---
+
+[<- 02 Complexity](../02-Time-Space-Complexity/) · [All topics](../../README.md) · [04 Strings ->](../04-Strings/)

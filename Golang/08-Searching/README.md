@@ -3,6 +3,17 @@
 > Go ships `sort.SearchInts` and the wonderfully general `sort.Search`. Learn
 > both, and learn to write the loop by hand.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Discarding half the search space per step. |
+| **Must know** | Binary search needs a **monotone predicate**, not merely sorted data. |
+| **The one trap** | The `lo <= hi` vs `lo < hi` boundary. Pick one convention and never mix them. |
+| **Reach for it when** | Sorted input, or anything phrased as "the smallest x such that ...". |
+
+---
+
 ## 1. Linear search
 
 `O(n)`, works on anything. `slices.Index` (Go 1.21+) is the built-in.
@@ -179,3 +190,7 @@ optimisation problems phrased as "find the best k".
 ```bash
 go run searching.go
 ```
+
+---
+
+[<- 07 Recursion & Backtracking](../07-Recursion-Backtracking/) · [All topics](../../README.md) · [09 Sorting ->](../09-Sorting/)

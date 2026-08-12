@@ -3,6 +3,17 @@
 > JS strings are immutable UTF-16 sequences. Both of those words are a source
 > of bugs.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Arrays, plus immutability and character encoding. |
+| **Must know** | Concatenating in a loop is `O(n^2)`; collect into a list and join once. |
+| **The one trap** | Assuming one character is one byte. It is not, outside ASCII. |
+| **Reach for it when** | Palindromes, anagrams, substring search, prefix/suffix work. |
+
+---
+
 ## 1. Immutability
 
 ```js
@@ -158,3 +169,7 @@ s.normalize("NFC")              // canonicalise accents before comparing
 ```bash
 node strings.js
 ```
+
+---
+
+[<- 03 Arrays](../03-Arrays/) · [All topics](../../README.md) · [05 Linked List ->](../05-Linked-List/)

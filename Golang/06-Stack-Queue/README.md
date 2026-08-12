@@ -3,6 +3,17 @@
 > Go ships no stack or queue type. A slice is both - and knowing which slice
 > operation is cheap is the whole lesson.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The two access disciplines: last-in-first-out and first-in-first-out. |
+| **Must know** | Both are `O(1)` per operation - **when backed by the right structure**. |
+| **The one trap** | Popping from the front of an array. That is `O(n)`, and it is silent. |
+| **Reach for it when** | Matching and nesting -> stack. Level-by-level or fairness -> queue. |
+
+---
+
 ## 1. Definitions
 
 | | Stack | Queue |
@@ -104,3 +115,7 @@ from the back.
 ```bash
 go run stack_queue.go
 ```
+
+---
+
+[<- 05 Linked List](../05-Linked-List/) · [All topics](../../README.md) · [07 Recursion & Backtracking ->](../07-Recursion-Backtracking/)

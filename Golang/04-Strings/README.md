@@ -3,6 +3,17 @@
 > In Go a `string` is an immutable **byte** slice with a length. Indexing gives
 > you a byte; ranging gives you a rune. That distinction is the whole chapter.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Arrays, plus immutability and character encoding. |
+| **Must know** | Concatenating in a loop is `O(n^2)`; collect into a list and join once. |
+| **The one trap** | Assuming one character is one byte. It is not, outside ASCII. |
+| **Reach for it when** | Palindromes, anagrams, substring search, prefix/suffix work. |
+
+---
+
 ## 1. Bytes vs runes
 
 ```go
@@ -167,3 +178,7 @@ whitespace, unlike `Split(s, " ")`.
 ```bash
 go run strings.go
 ```
+
+---
+
+[<- 03 Arrays](../03-Arrays/) · [All topics](../../README.md) · [05 Linked List ->](../05-Linked-List/)

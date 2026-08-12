@@ -2,6 +2,17 @@
 
 > The 20% of Python you use in 95% of DSA problems.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The container costs and idioms every later chapter quietly assumes. |
+| **Must know** | Index `O(1)`, insert-at-front `O(n)`, hash lookup `O(1)` average, sort `O(n log n)`. |
+| **The one trap** | Reaching for a list where a hash set was needed - it turns `O(n)` into `O(n^2)`. |
+| **Reach for it when** | Before anything else. Every later chapter is built on these costs. |
+
+---
+
 ## Why this chapter exists
 
 You cannot reason about algorithms while also fighting the language. This chapter
@@ -152,3 +163,7 @@ ten sorting algorithms.
 ```bash
 python basics.py
 ```
+
+---
+
+[All topics](../../README.md) · [02 Complexity ->](../02-Time-Space-Complexity/)

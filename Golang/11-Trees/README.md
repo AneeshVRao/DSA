@@ -3,6 +3,17 @@
 > A tree is a linked list that branches. Go's dynamically growing stacks make
 > recursion here far safer than in Node or Python.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Hierarchy - and the natural shape of recursion. |
+| **Must know** | Four traversals. Most problems are one bottom-up post-order pass. |
+| **The one trap** | Height conventions: edges (empty `= -1`) vs nodes (empty `= 0`). Mixing them is off-by-one. |
+| **Reach for it when** | Hierarchical data, and anything saying "path", "depth", "ancestor" or "subtree". |
+
+---
+
 ## 1. Vocabulary
 
 ```
@@ -162,3 +173,7 @@ and half of heavy-light decomposition.
 ```bash
 go run trees.go
 ```
+
+---
+
+[<- 10 Hashing](../10-Hashing/) · [All topics](../../README.md) · [12 Binary Search Tree ->](../12-Binary-Search-Tree/)

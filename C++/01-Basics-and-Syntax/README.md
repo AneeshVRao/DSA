@@ -3,6 +3,17 @@
 > C++ is the fastest language for competitive programming and the most
 > unforgiving one. This chapter is the safety rail.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The container costs and idioms every later chapter quietly assumes. |
+| **Must know** | Index `O(1)`, insert-at-front `O(n)`, hash lookup `O(1)` average, sort `O(n log n)`. |
+| **The one trap** | Reaching for a list where a hash set was needed - it turns `O(n)` into `O(n^2)`. |
+| **Reach for it when** | Before anything else. Every later chapter is built on these costs. |
+
+---
+
 ## Why this chapter exists
 
 C++ gives you raw memory access *and* a world-class standard library. DSA work
@@ -145,3 +156,7 @@ are fine because the process exits immediately.
 ```bash
 g++ -std=c++17 -O2 -Wall basics.cpp -o basics && ./basics
 ```
+
+---
+
+[All topics](../../README.md) · [02 Complexity ->](../02-Time-Space-Complexity/)

@@ -2,6 +2,17 @@
 
 > The skill that separates "it works" from "it works on the real input".
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | How to predict runtime **before** writing the code. |
+| **Must know** | Drop constants, keep the dominant term. A recursion tree costs `branches^depth`. |
+| **The one trap** | Counting only the data and forgetting the call stack and the copies. |
+| **Reach for it when** | Every time you read a constraint line - `n <= 10^5` already names the algorithm. |
+
+---
+
 ## 1. What Big-O actually says
 
 Big-O describes how the **cost grows** as the input grows, ignoring constants
@@ -144,3 +155,7 @@ python complexity.py
 
 The script counts operations (not wall-clock time) so the growth curves are
 exact and reproducible.
+
+---
+
+[<- 01 Basics & Syntax](../01-Basics-and-Syntax/) · [All topics](../../README.md) · [03 Arrays ->](../03-Arrays/)

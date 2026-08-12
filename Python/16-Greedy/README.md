@@ -3,6 +3,17 @@
 > Greedy takes the best-looking option right now and never reconsiders. When
 > that works it is unbeatable. The hard part is knowing when it works.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Take the locally best choice and never reconsider it. |
+| **Must know** | It requires a **proof** - usually an exchange argument. It is not a default strategy. |
+| **The one trap** | Assuming greedy works because it passed the sample cases. It often does not. |
+| **Reach for it when** | Intervals, scheduling, Huffman - and only after sorting by the *right* key. |
+
+---
+
 ## 1. The two conditions
 
 Greedy is correct only when both hold:
@@ -110,3 +121,7 @@ which restores the greedy choice property.
 ```bash
 python greedy.py
 ```
+
+---
+
+[<- 15 Dynamic Programming](../15-Dynamic-Programming/) · [All topics](../../README.md) · [17 Bit Manipulation ->](../17-Bit-Manipulation/)

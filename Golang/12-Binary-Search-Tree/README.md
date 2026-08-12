@@ -3,6 +3,17 @@
 > Go's standard library has no ordered map at all. If you need sorted
 > iteration, range queries or floor/ceiling, this is what you build.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | A tree with an ordering invariant, so an in-order walk comes out **sorted**. |
+| **Must know** | Every operation is `O(h)`. `h = log n` only while the tree stays balanced. |
+| **The one trap** | Validating by comparing parent to child. The bound must be inherited from *all* ancestors. |
+| **Reach for it when** | Ordered lookups, floor/ceil, kth smallest, range queries. |
+
+---
+
 ## 1. The BST property
 
 For **every** node:
@@ -170,3 +181,7 @@ can cascade all the way to the root.
 ```bash
 go run bst.go
 ```
+
+---
+
+[<- 11 Trees](../11-Trees/) · [All topics](../../README.md) · [13 Heaps & Priority Queue ->](../13-Heaps-Priority-Queue/)

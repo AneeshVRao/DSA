@@ -3,6 +3,17 @@
 > `std::string` is a `vector<char>` with extra methods. That is genuinely all
 > it is - and it means you already know its cost model.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Arrays, plus immutability and character encoding. |
+| **Must know** | Concatenating in a loop is `O(n^2)`; collect into a list and join once. |
+| **The one trap** | Assuming one character is one byte. It is not, outside ASCII. |
+| **Reach for it when** | Palindromes, anagrams, substring search, prefix/suffix work. |
+
+---
+
 ## 1. std::string basics
 
 ```cpp
@@ -165,3 +176,7 @@ Reading whole lines: `getline(cin, line)`. Beware mixing `cin >> x` with
 ```bash
 g++ -std=c++17 -O2 -Wall strings.cpp -o strings && ./strings
 ```
+
+---
+
+[<- 03 Arrays](../03-Arrays/) · [All topics](../../README.md) · [05 Linked List ->](../05-Linked-List/)

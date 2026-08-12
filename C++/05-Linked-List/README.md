@@ -3,6 +3,17 @@
 > In C++ a linked list is where pointer discipline becomes visible: every
 > `next` you overwrite without saving is a leak or a crash.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Pointers instead of contiguity: cheap splicing, no random access. |
+| **Must know** | Insert/delete `O(1)` **given the node**, but `O(n)` to find it first. |
+| **The one trap** | Losing the tail - save `next` *before* rewiring a pointer. |
+| **Reach for it when** | The problem hands you a head pointer, or `O(1)` splicing is the point. |
+
+---
+
 ## 1. The structure
 
 ```
@@ -133,3 +144,7 @@ Dummy head, compare, splice - no allocation.
 ```bash
 g++ -std=c++17 -O2 -Wall linked_list.cpp -o linked_list && ./linked_list
 ```
+
+---
+
+[<- 04 Strings](../04-Strings/) · [All topics](../../README.md) · [06 Stack & Queue ->](../06-Stack-Queue/)

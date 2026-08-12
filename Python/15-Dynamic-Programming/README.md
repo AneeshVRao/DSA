@@ -3,6 +3,17 @@
 > DP is recursion that refuses to compute the same thing twice. That is the
 > entire idea; everything else is bookkeeping.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Recursion plus memory, for when subproblems overlap. |
+| **Must know** | Define the **state** precisely, then the transition, then the fill order. In that order. |
+| **The one trap** | Iterating capacity upwards turns 0/1 knapsack into the unbounded version, silently. |
+| **Reach for it when** | "Count the ways", "min/max cost", "is it possible" - over choices with structure. |
+
+---
+
 ## 1. When DP applies
 
 Two properties must both hold:
@@ -198,3 +209,7 @@ and silently turn it into unbounded knapsack.
 ```bash
 python dp.py
 ```
+
+---
+
+[<- 14 Graphs](../14-Graphs/) · [All topics](../../README.md) · [16 Greedy ->](../16-Greedy/)

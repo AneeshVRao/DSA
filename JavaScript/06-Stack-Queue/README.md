@@ -3,6 +3,17 @@
 > JS gives you a perfect stack for free and a terrible queue for free. Knowing
 > which is which is the point of this chapter.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The two access disciplines: last-in-first-out and first-in-first-out. |
+| **Must know** | Both are `O(1)` per operation - **when backed by the right structure**. |
+| **The one trap** | Popping from the front of an array. That is `O(n)`, and it is silent. |
+| **Reach for it when** | Matching and nesting -> stack. Level-by-level or fairness -> queue. |
+
+---
+
 ## 1. Definitions
 
 | | Stack | Queue |
@@ -102,3 +113,7 @@ smaller values from the back.
 ```bash
 node stack_queue.js
 ```
+
+---
+
+[<- 05 Linked List](../05-Linked-List/) · [All topics](../../README.md) · [07 Recursion & Backtracking ->](../07-Recursion-Backtracking/)

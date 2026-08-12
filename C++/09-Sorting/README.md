@@ -3,6 +3,17 @@
 > `std::sort` is one of the fastest sorts ever shipped. Knowing what is inside
 > it is what lets you reason about the cases where it is the wrong tool.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The `O(n log n)` barrier, and the two ways of getting under it. |
+| **Must know** | Comparison sorts cannot beat `O(n log n)`. Counting and radix can, by not comparing. |
+| **The one trap** | Assuming your language's sort is stable. Some are, some are not. |
+| **Reach for it when** | Sorting is usually the *preprocessing* step for greedy, two pointers or intervals. |
+
+---
+
 ## 1. The three properties that matter
 
 - **Stable** - equal elements keep their relative order (`stable_sort`, not
@@ -105,3 +116,7 @@ g++ -std=c++17 -O2 -Wall sorting.cpp -o sorting && ./sorting
 ```
 
 Every algorithm is verified against `std::sort` on 200 random vectors.
+
+---
+
+[<- 08 Searching](../08-Searching/) · [All topics](../../README.md) · [10 Hashing ->](../10-Hashing/)

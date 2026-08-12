@@ -3,6 +3,17 @@
 > Go gives you fixed widths, an explicit `math/bits` package, and one operator
 > nobody else has: `&^`.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Integers as sets, and a handful of `O(1)` tricks. |
+| **Must know** | `n & (n-1)` clears the lowest set bit, `n & -n` isolates it, XOR cancels pairs. |
+| **The one trap** | Signed shifts and fixed widths behave differently in every language. |
+| **Reach for it when** | Subsets as masks, "appears once", parity, and state that must fit in one integer. |
+
+---
+
 ## 1. The operators
 
 | Operator | Name | Effect | Example (4-bit) |
@@ -154,3 +165,7 @@ subsets so consecutive ones differ by a single element.
 ```bash
 go run bits.go
 ```
+
+---
+
+[<- 16 Greedy](../16-Greedy/) · [All topics](../../README.md) · [18 Trie ->](../18-Trie/)

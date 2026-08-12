@@ -4,6 +4,17 @@
 > asked to explain one - and the *properties* (stable? in place? worst case?)
 > decide real design choices.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The `O(n log n)` barrier, and the two ways of getting under it. |
+| **Must know** | Comparison sorts cannot beat `O(n log n)`. Counting and radix can, by not comparing. |
+| **The one trap** | Assuming your language's sort is stable. Some are, some are not. |
+| **Reach for it when** | Sorting is usually the *preprocessing* step for greedy, two pointers or intervals. |
+
+---
+
 ## 1. The three properties that matter
 
 - **Stable** - equal elements keep their original relative order. Essential
@@ -122,3 +133,7 @@ python sorting.py
 
 Every algorithm is verified against `sorted()` on 200 random arrays, and the
 stable ones are checked for stability explicitly.
+
+---
+
+[<- 08 Searching](../08-Searching/) · [All topics](../../README.md) · [10 Hashing ->](../10-Hashing/)

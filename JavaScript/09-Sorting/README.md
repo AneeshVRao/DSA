@@ -3,6 +3,17 @@
 > `Array.prototype.sort` has one famous trap and one useful guarantee. Both
 > are worth knowing before you write a line.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The `O(n log n)` barrier, and the two ways of getting under it. |
+| **Must know** | Comparison sorts cannot beat `O(n log n)`. Counting and radix can, by not comparing. |
+| **The one trap** | Assuming your language's sort is stable. Some are, some are not. |
+| **Reach for it when** | Sorting is usually the *preprocessing* step for greedy, two pointers or intervals. |
+
+---
+
 ## 1. The two things to know about the built-in
 
 ```js
@@ -112,3 +123,7 @@ node sorting.js
 ```
 
 Every algorithm is verified against the built-in sort on 200 random arrays.
+
+---
+
+[<- 08 Searching](../08-Searching/) · [All topics](../../README.md) · [10 Hashing ->](../10-Hashing/)

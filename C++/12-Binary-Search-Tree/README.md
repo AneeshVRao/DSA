@@ -4,6 +4,17 @@
 > builds the unbalanced version so you understand what they are protecting you
 > from.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | A tree with an ordering invariant, so an in-order walk comes out **sorted**. |
+| **Must know** | Every operation is `O(h)`. `h = log n` only while the tree stays balanced. |
+| **The one trap** | Validating by comparing parent to child. The bound must be inherited from *all* ancestors. |
+| **Reach for it when** | Ordered lookups, floor/ceil, kth smallest, range queries. |
+
+---
+
 ## 1. The BST property
 
 For **every** node:
@@ -187,3 +198,7 @@ can cascade all the way to the root.
 ```bash
 g++ -std=c++17 -O2 -Wall bst.cpp -o bst && ./bst
 ```
+
+---
+
+[<- 11 Trees](../11-Trees/) · [All topics](../../README.md) · [13 Heaps & Priority Queue ->](../13-Heaps-Priority-Queue/)

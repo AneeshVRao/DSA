@@ -3,6 +3,17 @@
 > Trees were graphs with training wheels. Remove "no cycles" and every
 > traversal needs a visited set.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Everything else, with cycles allowed - so every traversal needs a `visited` set. |
+| **Must know** | BFS = shortest path unweighted. Dijkstra = non-negative weights. Bellman-Ford = negatives. |
+| **The one trap** | Marking visited on **dequeue**. Mark on *enqueue*, or the work blows up. |
+| **Reach for it when** | Connections, dependencies, reachability - and every grid, which is a graph in disguise. |
+
+---
+
 ## 1. Vocabulary
 
 | Term | Meaning |
@@ -200,3 +211,7 @@ as vertices - no adjacency list needed.
 ```bash
 go run graphs.go
 ```
+
+---
+
+[<- 13 Heaps & Priority Queue](../13-Heaps-Priority-Queue/) · [All topics](../../README.md) · [15 Dynamic Programming ->](../15-Dynamic-Programming/)

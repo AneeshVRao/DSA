@@ -9,6 +9,17 @@ from structure (divisibility, congruence, recurrence) rather than iteration.
 
 ---
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | The chapter where the input is a **number**, not a collection. |
+| **Must know** | gcd `O(log n)`, binary exponentiation `O(log e)`, and division needs a *modular inverse*. |
+| **The one trap** | Forgetting the leftover prime above `sqrt(n)` when factorising. |
+| **Reach for it when** | "Answer modulo 1e9+7", primes, divisors, and any `n` up to `10^18`. |
+
+---
+
 ## 1. The Euclidean algorithm
 
 The oldest non-trivial algorithm still in use - Euclid, ~300 BC.
@@ -279,3 +290,7 @@ Every function is cross-checked against brute force or the standard library -
 `gcd` against `math.gcd`, `mod_pow` against `pow`, the sieve against trial
 division against Miller-Rabin on every `n` up to 2000, `nCr` against
 `math.comb` and against Pascal's rule.
+
+---
+
+[<- 19 Advanced Topics](../19-Advanced-Topics/) · [All topics](../../README.md)

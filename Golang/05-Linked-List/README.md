@@ -3,6 +3,17 @@
 > Go has a garbage collector and no pointer arithmetic, so linked lists here
 > are pure structure: `*Node` fields and `nil` checks.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Pointers instead of contiguity: cheap splicing, no random access. |
+| **Must know** | Insert/delete `O(1)` **given the node**, but `O(n)` to find it first. |
+| **The one trap** | Losing the tail - save `next` *before* rewiring a pointer. |
+| **Reach for it when** | The problem hands you a head pointer, or `O(1)` splicing is the point. |
+
+---
+
 ## 1. The structure
 
 ```
@@ -126,3 +137,7 @@ Dummy head, compare, splice. No allocation beyond the dummy.
 ```bash
 go run linked_list.go
 ```
+
+---
+
+[<- 04 Strings](../04-Strings/) · [All topics](../../README.md) · [06 Stack & Queue ->](../06-Stack-Queue/)

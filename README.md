@@ -49,6 +49,13 @@ genuinely different experience from reading it once.
 
 ---
 
+Every chapter README opens with an **At a glance** box — what the topic is, the
+one thing you must know, the one trap, and when to reach for it. That is the
+part to re-read the night before an interview; the sections below it are the
+full notes.
+
+---
+
 ## 🗂 Folder tree
 
 ```
@@ -96,6 +103,35 @@ Each row links to that topic's full write-up in each language.
 | 18 | **Trie** | Prefix tree, autocomplete, wildcards, bitwise trie | [→](Python/18-Trie/) | [→](C%2B%2B/18-Trie/) | [→](JavaScript/18-Trie/) | [→](Golang/18-Trie/) |
 | 19 | **Advanced Topics** | Union-Find, Fenwick, segment tree + lazy, sparse table | [→](Python/19-Advanced-Topics/) | [→](C%2B%2B/19-Advanced-Topics/) | [→](JavaScript/19-Advanced-Topics/) | [→](Golang/19-Advanced-Topics/) |
 | 20 | **Math & Number Theory** | GCD/Bezout, modular arithmetic, sieves, matrix exponentiation | [→](Python/20-Math-and-Number-Theory/) | [→](C%2B%2B/20-Math-and-Number-Theory/) | [→](JavaScript/20-Math-and-Number-Theory/) | [→](Golang/20-Math-and-Number-Theory/) |
+
+---
+
+## 🎯 Scope — what is in, and what is deliberately out
+
+This repo targets **software engineering and AI engineering interviews**. That
+is a real boundary, not an accident, so it is worth stating plainly.
+
+**Covered to interview depth** — every topic in the index above, each with the
+theory, a from-scratch implementation in four languages, and a curated problem
+set. Chapters 14 (Graphs), 15 (DP) and 20 (Math) are where the difficulty
+actually lives, and all three are thorough.
+
+**Deliberately not covered.** These are real algorithms, but they appear in
+ICPC and Codeforces Div. 1 far more than in hiring loops. Reading the theory is
+worthwhile; writing 30 more files was not:
+
+| Area | Left out |
+|------|----------|
+| Graphs | max-flow (Dinic, Edmonds-Karp), bipartite matching, Hungarian algorithm, A* |
+| Strings | Boyer-Moore, suffix arrays / automata, Aho-Corasick, Manacher |
+| Trees | red-black and splay trees, heavy-light decomposition, B-trees |
+| Structures | skip lists, treaps, ternary search tries, sqrt decomposition |
+| Geometry | convex hull, closest pair, sweep-line - the whole area |
+| Theory | matroids (the formal proof of *why* greedy works) |
+
+**Known gaps I would close next**, in order: digit DP and game-theory DP
+(minimax) in chapter 15, expression trees in chapter 11, empirical benchmarking
+in chapter 02, and row-major vs column-major cache locality in chapter 03.
 
 ---
 

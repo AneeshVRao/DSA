@@ -3,6 +3,17 @@
 > Recursion solves a smaller copy of the same problem. Backtracking is
 > recursion that undoes its choices before trying the next one.
 
+**At a glance**
+
+| | |
+|---|---|
+| **What it is** | Solve by shrinking. Backtracking adds choose -> explore -> **un-choose**. |
+| **Must know** | Every recursion needs a base case that is actually reachable from the input. |
+| **The one trap** | Forgetting to un-choose, so state leaks from one branch into the next. |
+| **Reach for it when** | "All permutations / subsets / combinations", grid search, parsing. |
+
+---
+
 ## 1. Anatomy
 
 ```cpp
@@ -111,3 +122,7 @@ nodes in 8-Queens.
 ```bash
 g++ -std=c++17 -O2 -Wall recursion.cpp -o recursion && ./recursion
 ```
+
+---
+
+[<- 06 Stack & Queue](../06-Stack-Queue/) · [All topics](../../README.md) · [08 Searching ->](../08-Searching/)
