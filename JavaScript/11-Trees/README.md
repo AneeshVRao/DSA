@@ -97,6 +97,50 @@ nodes has depth 20 - fine. A degenerate tree of 10^5 nodes has depth 10^5 -
 | `lowestCommonAncestor` | `O(n)` | `O(h)` |
 | `serialize` / `deserialize` | `O(n)` | `O(n)` |
 
+## Euler tour - turning a tree into an array
+
+Most hard tree problems get easier once the tree is **flattened**, because array
+problems have `O(1)` and `O(log n)` tools that trees do not.
+
+### The full walk - `2n - 1` entries
+
+Record the current node every time control passes through it: on the way in, and
+again after returning from each child.
+
+```text
+      1
+     / \        tour: 1 2 4 2 5 2 1 3 1
+    2   3       LCA(4, 5) = the shallowest node between them = 2
+   / \
+  4   5
+```
+
+The **lowest common ancestor** of `u` and `v` is the shallowest node in the tour
+between any occurrence of each - which turns LCA into a **range-minimum query**,
+answerable in `O(1)` with the sparse table from chapter 19.
+
+All three classic traversals are projections of this one walk: preorder takes
+each node at its **first** appearance, postorder at its **last**, inorder at its
+middle one.
+
+### The in/out timestamps - the version you will actually use
+
+Stamp a counter on the way in and on the way out. Then:
+
+```text
+u is an ancestor of v   <=>   tin[u] <= tin[v] and tout[v] <= tout[u]
+```
+
+An ancestor test in `O(1)` with no walking. Better still, a node's subtree
+occupies a **contiguous range** `[tin, tout)` of the entry order - so "sum over
+this subtree" or "add x to this whole subtree" becomes a *range query on a flat
+array*, which a Fenwick or segment tree answers in `O(log n)`.
+
+That single observation is the standard preprocessing step for subtree queries,
+and half of heavy-light decomposition.
+
+---
+
 ## Run the code
 
 ```bash

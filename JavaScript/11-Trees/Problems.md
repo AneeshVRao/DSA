@@ -20,6 +20,14 @@ parents. Use a head index for every BFS queue.
 | 13 | Serialize and Deserialize Binary Tree | Preorder + null markers. | [LeetCode 297](https://leetcode.com/problems/serialize-and-deserialize-binary-tree/) |
 | 14 | Flatten Binary Tree to Linked List | Reverse postorder with a running pointer. | [LeetCode 114](https://leetcode.com/problems/flatten-binary-tree-to-linked-list/) |
 
+## Euler tour
+| Problem | Hint | Link |
+|---------|------|------|
+| Lowest Common Ancestor of a Binary Tree | Euler tour + RMQ, or the plain recursive version. | [LeetCode 236](https://leetcode.com/problems/lowest-common-ancestor-of-a-binary-tree/) |
+| Number of Good Leaf Nodes Pairs | Subtree ranges make the pairing tractable. | [LeetCode 1530](https://leetcode.com/problems/number-of-good-leaf-nodes-pairs/) |
+| Sum of Distances in Tree | Rerooting on a flattened tree. | [LeetCode 834](https://leetcode.com/problems/sum-of-distances-in-tree/) |
+| Create Sorted Array through Instructions | Subtree ranges plus a Fenwick tree. | [LeetCode 1649](https://leetcode.com/problems/create-sorted-array-through-instructions/) |
+
 ## Self-check before moving on
 
 - [ ] I can write all four traversals recursively and iteratively.
@@ -27,3 +35,6 @@ parents. Use a head index for every BFS queue.
 - [ ] I return "value + answer" from one pass to avoid `O(n^2)`.
 - [ ] I know Node overflows at roughly 10k frames and when that matters.
 - [ ] I can explain Morris traversal's `O(1)` space trick.
+- [ ] I know the Euler tour has 2n-1 entries and why.
+- [ ] I can use tin/tout to test ancestry in O(1).
+- [ ] I know a subtree is a CONTIGUOUS timestamp range, and what that buys.

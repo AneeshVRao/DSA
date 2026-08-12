@@ -9,8 +9,11 @@
 #include <functional>
 #include <iostream>
 #include <queue>
+#include <climits>
+#include <map>
 #include <random>
 #include <stdexcept>
+#include <utility>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -240,6 +243,149 @@ class TaskQueue {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Indexed priority queue - a heap whose keys can be CHANGED
+// ============================================================================
+
+// A min-heap supporting change-priority and remove in O(log n).
+//
+// THE PROBLEM. A plain binary heap can only look at its root. To lower the
+// priority of an arbitrary item you would first have to FIND it - O(n) - which
+// defeats the point. So the standard workaround in Dijkstra is to push a
+// duplicate entry and skip stale ones on pop:
+//
+//     if (distance > best[node]) continue;   // stale entry, ignore it
+//
+// Correct, and usually fine, but the heap can grow to O(E) entries not O(V).
+//
+// THE FIX. Keep a second structure - a map from item to its current position
+// in the heap array - updated on every swap. Now any item is located in O(1)
+// and re-sifted in O(log n).
+//
+//     heap[i]         the item at heap position i
+//     position[item]  the heap position of that item   (the inverse map)
+//
+// Every swap must update BOTH. That is the entire implementation difficulty:
+// one forgotten position write and the map silently goes stale, which surfaces
+// much later as a wrong answer rather than a crash.
+//
+// WHERE IT PAYS OFF:
+//   - Dijkstra and Prim with decrease-key: the heap stays O(V) entries
+//   - A* with reopened nodes
+//   - schedulers where a queued job's priority is revised
+//   - LRU/LFU caches with an evictable score per key
+class IndexedPriorityQueue {
+   public:
+    size_t size() const { return heap_.size(); }
+    bool empty() const { return heap_.empty(); }
+    bool contains(const string& item) const { return position_.count(item) > 0; }
+
+    // Insert, or update if already present. O(log n).
+    void push(const string& item, long long priority) {
+        auto found = position_.find(item);
+        if (found != position_.end()) {
+            changePriority(item, priority);
+            return;
+        }
+        heap_.push_back({priority, item});
+        position_[item] = heap_.size() - 1;
+        siftUp(heap_.size() - 1);
+    }
+
+    // Smallest (priority, item) without removing it. O(1).
+    pair<long long, string> peek() const {
+        if (heap_.empty()) throw out_of_range("peek from an empty priority queue");
+        return heap_[0];
+    }
+
+    // Remove and return the smallest (priority, item). O(log n).
+    pair<long long, string> pop() {
+        if (heap_.empty()) throw out_of_range("pop from an empty priority queue");
+        return removeAt(0);
+    }
+
+    // Re-key an item already in the queue. O(log n).
+    //
+    // Sift whichever way the change calls for - decrease-key moves the item up,
+    // increase-key moves it down.
+    void changePriority(const string& item, long long priority) {
+        auto found = position_.find(item);
+        if (found == position_.end()) throw out_of_range("item is not in the queue");
+
+        size_t i = found->second;
+        long long old = heap_[i].first;
+        heap_[i].first = priority;
+        if (priority < old) siftUp(i);
+        else if (priority > old) siftDown(i);
+    }
+
+    // Remove an arbitrary item. O(log n) - impossible with a plain heap.
+    pair<long long, string> remove(const string& item) {
+        auto found = position_.find(item);
+        if (found == position_.end()) throw out_of_range("item is not in the queue");
+        return removeAt(found->second);
+    }
+
+    // Exposed for the self-check: the invariant must hold after every operation.
+    bool isValid() const {
+        for (size_t i = 0; i < heap_.size(); i++) {
+            auto found = position_.find(heap_[i].second);
+            if (found == position_.end() || found->second != i) return false;
+            if (i > 0 && heap_[(i - 1) / 2].first > heap_[i].first) return false;
+        }
+        return position_.size() == heap_.size();
+    }
+
+   private:
+    vector<pair<long long, string>> heap_;      // (priority, item)
+    unordered_map<string, size_t> position_;    // item -> heap index
+
+    // The ONE place the two structures are kept in step.
+    void swapNodes(size_t i, size_t j) {
+        std::swap(heap_[i], heap_[j]);
+        position_[heap_[i].second] = i;
+        position_[heap_[j].second] = j;
+    }
+
+    void siftUp(size_t i) {
+        while (i > 0) {
+            size_t parent = (i - 1) / 2;
+            if (heap_[i].first >= heap_[parent].first) break;
+            swapNodes(i, parent);
+            i = parent;
+        }
+    }
+
+    void siftDown(size_t i) {
+        for (;;) {
+            size_t smallest = i;
+            for (size_t child : {2 * i + 1, 2 * i + 2}) {
+                if (child < heap_.size() && heap_[child].first < heap_[smallest].first) {
+                    smallest = child;
+                }
+            }
+            if (smallest == i) return;
+            swapNodes(i, smallest);
+            i = smallest;
+        }
+    }
+
+    // Swap the target with the last slot, drop it, then re-sift.
+    pair<long long, string> removeAt(size_t i) {
+        size_t last = heap_.size() - 1;
+        swapNodes(i, last);
+        pair<long long, string> removed = heap_.back();
+        heap_.pop_back();
+        position_.erase(removed.second);
+
+        if (i < last) {              // something was moved into position i
+            siftDown(i);
+            siftUp(i);               // it may belong ABOVE its new parent
+        }
+        return removed;
+    }
+};
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -310,6 +456,82 @@ int main() {
     assert(tasks.nextTask() == "review the PR");   // tie broken by arrival
     assert(tasks.nextTask() == "write tests");
     assert(tasks.size() == 0);
+    // --- Indexed priority queue -----------------------------------------------
+    IndexedPriorityQueue ipq;
+    ipq.push("a", 5);
+    ipq.push("b", 3);
+    ipq.push("c", 8);
+    ipq.push("d", 1);
+
+    assert(ipq.size() == 4);
+    assert(ipq.contains("c") && !ipq.contains("z"));
+    assert((ipq.peek() == pair<long long, string>{1, "d"}));
+
+    // The operation a plain heap cannot do: re-key an interior item.
+    ipq.changePriority("c", 0);                  // 8 -> 0, must rise to the top
+    assert(ipq.peek().second == "c");
+    ipq.changePriority("c", 100);                // and back down again
+    assert(ipq.peek().second == "d");
+
+    // Remove from the middle, also impossible with a plain heap.
+    assert((ipq.remove("a") == pair<long long, string>{5, "a"}));
+    assert(!ipq.contains("a") && ipq.size() == 3);
+
+    assert(ipq.pop().second == "d");
+    assert(ipq.pop().second == "b");
+    assert(ipq.pop().second == "c");
+    assert(ipq.empty());
+
+    bool poppedEmpty = false;
+    try {
+        ipq.pop();
+    } catch (const out_of_range&) {
+        poppedEmpty = true;
+    }
+    assert(poppedEmpty);
+
+    // push() on an existing item updates rather than duplicating.
+    ipq.push("x", 5);
+    ipq.push("x", 2);
+    assert(ipq.size() == 1 && ipq.peek().first == 2);
+
+    // Against a reference map, with the invariant re-verified after EVERY
+    // operation - a stale index would otherwise stay silent until much later.
+    mt19937 ipqRng(13);
+    for (int trial = 0; trial < 60; trial++) {
+        IndexedPriorityQueue queue;
+        map<string, long long> reference;
+
+        for (int step = 0; step < 120; step++) {
+            string item = "item" + to_string(ipqRng() % 15);
+            unsigned roll = ipqRng() % 100;
+
+            if (roll < 45) {
+                long long priority = ipqRng() % 101;
+                queue.push(item, priority);
+                reference[item] = priority;
+            } else if (roll < 65 && reference.count(item)) {
+                long long priority = ipqRng() % 101;
+                queue.changePriority(item, priority);
+                reference[item] = priority;
+            } else if (roll < 80 && reference.count(item)) {
+                assert(queue.remove(item).first == reference[item]);
+                reference.erase(item);
+            } else if (!reference.empty()) {
+                long long lowest = LLONG_MAX;
+                for (const auto& [key, value] : reference) lowest = min(lowest, value);
+
+                auto [priority, popped] = queue.pop();
+                assert(priority == lowest);          // the true minimum
+                assert(reference[popped] == priority);
+                reference.erase(popped);
+            }
+
+            assert(queue.size() == reference.size());
+            assert(queue.isValid());                 // heap AND position map
+        }
+    }
+
 
     cout << "13-Heaps-Priority-Queue (C++): all checks passed\n";
     return 0;

@@ -363,6 +363,97 @@ export function deserialize(data) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Euler tour - flattening a tree into an array
+// ============================================================================
+/**
+ * The full walk: every node recorded on ENTRY and again after each child. O(n).
+ *
+ * A DFS that appends the current node every time control passes through it -
+ * on the way in, and again after returning from each child. The result has
+ * exactly 2n - 1 entries for an n-node tree.
+ *
+ * Why it matters: it turns a TREE problem into an ARRAY problem. The lowest
+ * common ancestor of u and v is the SHALLOWEST node in the tour between any
+ * occurrence of u and any occurrence of v - which makes LCA a range-minimum
+ * query, answerable in O(1) with the sparse table from chapter 19.
+ *
+ *           1
+ *          / .        tour: 1 2 4 2 5 2 1 3 1
+ *         2   3       LCA(4, 5) = the shallowest node between them = 2
+ *        / .
+ *       4   5
+ *
+ * The three classic traversals are all projections of this one walk:
+ *   preorder  - take each node at its FIRST appearance
+ *   inorder   - take each node at its middle appearance (binary trees)
+ *   postorder - take each node at its LAST appearance
+ */
+export function eulerTour(root) {
+  const tour = [];
+  if (root === null) return tour;
+
+  const walk = (node) => {
+    tour.push(node.val);
+    for (const child of [node.left, node.right]) {
+      if (child) {
+        walk(child);
+        tour.push(node.val); // record the node again on the way back
+      }
+    }
+  };
+
+  walk(root);
+  return tour;
+}
+
+/**
+ * Entry and exit timestamps per node. O(n).
+ *
+ * The other Euler tour, and the more useful one in practice. Stamp a counter
+ * on the way in and on the way out. Then:
+ *
+ *     u is an ancestor of v   <=>   tin[u] <= tin[v] and tout[v] <= tout[u]
+ *
+ * An ancestor test in O(1), with no walking. Better still, a node's subtree
+ * occupies the CONTIGUOUS range [tin, tout) of the entry order - so "sum over
+ * a subtree" or "add x to a whole subtree" becomes a range query on a flat
+ * array, which a Fenwick or segment tree handles in O(log n).
+ *
+ * This is the standard preprocessing for subtree queries, and half of
+ * heavy-light decomposition.
+ *
+ * Iterative, to avoid blowing the stack on a degenerate (list-shaped) tree.
+ *
+ * Returns a `Map` of `value -> [tin, tout]`.
+ */
+export function eulerInOut(root) {
+  const times = new Map();
+  if (root === null) return times;
+
+  let clock = 0;
+  const entry = new Map();
+  // [node, leaving?] - false means "arriving", true means "leaving".
+  const stack = [[root, false]];
+
+  while (stack.length) {
+    const [node, leaving] = stack.pop();
+
+    if (leaving) {
+      times.set(node.val, [entry.get(node.val), clock]);
+      continue;
+    }
+
+    entry.set(node.val, clock++);
+    stack.push([node, true]); // schedule the exit stamp
+    // Right first, so the left child comes off the stack first.
+    for (const child of [node.right, node.left]) {
+      if (child) stack.push([child, false]);
+    }
+  }
+  return times;
+}
+
 function demo() {
   //         1
   //       /   \
@@ -434,6 +525,75 @@ function demo() {
   assert.deepEqual(inorder(deserialize(encoded)), inorder(tree));
   assert.equal(serialize(deserialize(encoded)), encoded); // round trip
   assert.equal(deserialize(serialize(null)), null);
+  // --- Euler tour -------------------------------------------------------------
+  //        1
+  //       / \
+  //      2   3
+  //     / \
+  //    4   5
+  const eulerTree = buildTree([1, 2, 3, 4, 5]);
+  assert.deepEqual(eulerTour(eulerTree), [1, 2, 4, 2, 5, 2, 1, 3, 1]); // 2n-1
+  assert.deepEqual(eulerTour(null), []);
+  assert.deepEqual(eulerTour(new TreeNode(7)), [7]);
+
+  const times = eulerInOut(eulerTree);
+  assert.deepEqual(times.get(1), [0, 5]); // the root spans everything
+  assert.deepEqual(times.get(4), [2, 3]); // leaves are width 1
+  assert.deepEqual(times.get(5), [3, 4]);
+  assert.equal(eulerInOut(null).size, 0);
+
+  // The ancestor test the timestamps exist for.
+  const isAncestor = (u, v) =>
+    times.get(u)[0] <= times.get(v)[0] && times.get(v)[1] <= times.get(u)[1];
+  assert.ok(isAncestor(1, 4) && isAncestor(2, 5));
+  assert.ok(!isAncestor(3, 4) && !isAncestor(4, 2));
+  assert.ok(isAncestor(3, 3)); // a node contains itself
+
+  // Against brute force on random trees.
+  let eulerSeed = 11;
+  const eulerRandom = () => {
+    eulerSeed = (eulerSeed * 1103515245 + 12345) & 0x7fffffff;
+    return eulerSeed / 0x7fffffff;
+  };
+
+  let nextValue = 0;
+  const randomTree = (size) => {
+    if (size === 0) return null;
+    const leftSize = Math.floor(eulerRandom() * size); // 0..size-1
+    const node = new TreeNode(nextValue++);
+    node.left = randomTree(leftSize);
+    node.right = randomTree(size - 1 - leftSize);
+    return node;
+  };
+
+  const subtreeValues = (node) =>
+    node === null ? [] : [node.val, ...subtreeValues(node.left), ...subtreeValues(node.right)];
+
+  for (let trial = 0; trial < 60; trial++) {
+    const size = 1 + Math.floor(eulerRandom() * 40);
+    const root = randomTree(size);
+
+    assert.equal(eulerTour(root).length, 2 * size - 1);
+
+    const stamps = eulerInOut(root);
+    assert.equal(stamps.size, size);
+
+    // Every subtree is a CONTIGUOUS timestamp range of its own size - the
+    // property that turns subtree queries into range queries.
+    const check = (node) => {
+      if (node === null) return;
+      const [tin, tout] = stamps.get(node.val);
+      const members = subtreeValues(node);
+      assert.equal(tout - tin, members.length);
+      for (const other of members) {
+        assert.ok(tin <= stamps.get(other)[0] && stamps.get(other)[0] < tout);
+      }
+      check(node.left);
+      check(node.right);
+    };
+    check(root);
+  }
+
 
   console.log("11-Trees (JavaScript): all checks passed");
 }

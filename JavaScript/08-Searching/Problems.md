@@ -20,6 +20,14 @@ where interviews actually go.
 | 13 | Search a 2D Matrix | Flatten the index with `Math.floor`. | [LeetCode 74](https://leetcode.com/problems/search-a-2d-matrix/) |
 | 14 | Search a 2D Matrix II | Staircase from the top-right. | [LeetCode 240](https://leetcode.com/problems/search-a-2d-matrix-ii/) |
 
+## Ternary search
+| Problem | Hint | Link |
+|---------|------|------|
+| Peak Index in a Mountain Array | The definition of unimodal - binary search on the slope also works. | [LeetCode 852](https://leetcode.com/problems/peak-index-in-a-mountain-array/) |
+| Find in Mountain Array | Ternary search for the peak, then binary search each side. | [LeetCode 1095](https://leetcode.com/problems/find-in-mountain-array/) |
+| Minimize Max Distance to Gas Station | The cost falls then rises in the answer. | [LeetCode 774](https://leetcode.com/problems/minimize-max-distance-to-gas-station/) |
+| Maximum Value at a Given Index | Unimodal in the chosen peak height. | [LeetCode 1802](https://leetcode.com/problems/maximum-value-at-a-given-index-in-a-bounded-array/) |
+
 ## Self-check before moving on
 
 - [ ] I can write binary search correctly on the first try.
@@ -27,3 +35,6 @@ where interviews actually go.
 - [ ] I can write `lowerBound` and `upperBound` from memory.
 - [ ] I recognise "minimum X such that ..." as binary search on the answer.
 - [ ] I always sort with a comparator before binary searching numbers.
+- [ ] I know ternary search needs UNIMODALITY, not monotonicity.
+- [ ] I know why it breaks on a plateau.
+- [ ] I know the float version caps out near sqrt(machine epsilon).

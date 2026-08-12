@@ -11,8 +11,12 @@
 #include <iostream>
 #include <optional>
 #include <queue>
+#include <functional>
+#include <map>
+#include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std;
@@ -400,6 +404,91 @@ TreeNode* deserialize(const string& data) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// Euler tour - flattening a tree into an array
+// ============================================================================
+
+// The full walk: every node recorded on ENTRY and again after each child. O(n).
+//
+// A DFS that appends the current node every time control passes through it -
+// on the way in, and again after returning from each child. The result has
+// exactly 2n - 1 entries for an n-node tree.
+//
+// Why it matters: it turns a TREE problem into an ARRAY problem. The lowest
+// common ancestor of u and v is the SHALLOWEST node in the tour between any
+// occurrence of u and any occurrence of v - which makes LCA a range-minimum
+// query, answerable in O(1) with the sparse table from chapter 19.
+//
+//           1
+//          / .        tour: 1 2 4 2 5 2 1 3 1
+//         2   3       LCA(4, 5) = the shallowest node between them = 2
+//        / .
+//       4   5
+//
+// The three classic traversals are all projections of this one walk:
+//   preorder  - take each node at its FIRST appearance
+//   inorder   - take each node at its middle appearance (binary trees)
+//   postorder - take each node at its LAST appearance
+void eulerTourHelper(TreeNode* node, vector<int>& tour) {
+    tour.push_back(node->val);
+    for (TreeNode* child : {node->left, node->right}) {
+        if (child) {
+            eulerTourHelper(child, tour);
+            tour.push_back(node->val);   // record the node again on the way back
+        }
+    }
+}
+
+vector<int> eulerTour(TreeNode* root) {
+    vector<int> tour;
+    if (root) eulerTourHelper(root, tour);
+    return tour;
+}
+
+// Entry and exit timestamps per node. O(n).
+//
+// The other Euler tour, and the more useful one in practice. Stamp a counter
+// on the way in and on the way out. Then:
+//
+//     u is an ancestor of v   <=>   tin[u] <= tin[v] and tout[v] <= tout[u]
+//
+// An ancestor test in O(1), with no walking. Better still, a node's subtree
+// occupies the CONTIGUOUS range [tin, tout) of the entry order - so "sum over
+// a subtree" or "add x to a whole subtree" becomes a range query on a flat
+// array, which a Fenwick or segment tree handles in O(log n).
+//
+// This is the standard preprocessing for subtree queries, and half of
+// heavy-light decomposition.
+//
+// Iterative, to avoid blowing the stack on a degenerate (list-shaped) tree.
+map<int, pair<int, int>> eulerInOut(TreeNode* root) {
+    map<int, pair<int, int>> times;
+    if (!root) return times;
+
+    int clock = 0;
+    map<int, int> entry;
+    // (node, leaving?) - false means "arriving", true means "leaving".
+    vector<pair<TreeNode*, bool>> stack{{root, false}};
+
+    while (!stack.empty()) {
+        auto [node, leaving] = stack.back();
+        stack.pop_back();
+
+        if (leaving) {
+            times[node->val] = {entry[node->val], clock};
+            continue;
+        }
+
+        entry[node->val] = clock++;
+        stack.push_back({node, true});           // schedule the exit stamp
+        // Right first, so the left child comes off the stack first.
+        for (TreeNode* child : {node->right, node->left}) {
+            if (child) stack.push_back({child, false});
+        }
+    }
+    return times;
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -493,6 +582,81 @@ int main() {
     assert(deserialize(serialize(nullptr)) == nullptr);
 
     deleteTree(tree);
+    // --- Euler tour -----------------------------------------------------------
+    /*        1        A block comment: a // line ending in a backslash is
+     *       /   \      a line continuation and would swallow the next
+     *      2     3     line (-Wcomment).
+     *     /  \
+     *    4    5
+     */
+    TreeNode* eulerTree = buildTree({1, 2, 3, 4, 5});
+    assert((eulerTour(eulerTree) == vector<int>{1, 2, 4, 2, 5, 2, 1, 3, 1}));  // 2n-1
+    assert(eulerTour(nullptr).empty());
+
+    TreeNode lone(7);
+    assert((eulerTour(&lone) == vector<int>{7}));
+
+    map<int, pair<int, int>> times = eulerInOut(eulerTree);
+    assert((times[1] == pair<int, int>{0, 5}));      // the root spans everything
+    assert((times[4] == pair<int, int>{2, 3}));      // leaves are width 1
+    assert((times[5] == pair<int, int>{3, 4}));
+    assert(eulerInOut(nullptr).empty());
+
+    // The ancestor test the timestamps exist for.
+    auto isAncestor = [&times](int u, int v) {
+        return times[u].first <= times[v].first && times[v].second <= times[u].second;
+    };
+    assert(isAncestor(1, 4) && isAncestor(2, 5));
+    assert(!isAncestor(3, 4) && !isAncestor(4, 2));
+    assert(isAncestor(3, 3));                        // a node contains itself
+
+    // Against brute force on random trees.
+    mt19937 eulerRng(11);
+    int nextValue = 0;
+    function<TreeNode*(int)> randomTree = [&](int size) -> TreeNode* {
+        if (size == 0) return nullptr;
+        int leftSize = int(eulerRng() % unsigned(size));      // 0..size-1
+        TreeNode* node = new TreeNode(nextValue++);
+        node->left = randomTree(leftSize);
+        node->right = randomTree(size - 1 - leftSize);
+        return node;
+    };
+
+    function<void(TreeNode*, vector<int>&)> subtreeValues =
+        [&](TreeNode* node, vector<int>& out) {
+            if (!node) return;
+            out.push_back(node->val);
+            subtreeValues(node->left, out);
+            subtreeValues(node->right, out);
+        };
+
+    for (int trial = 0; trial < 60; trial++) {
+        int size = int(eulerRng() % 40) + 1;
+        TreeNode* root = randomTree(size);
+
+        assert(eulerTour(root).size() == size_t(2 * size - 1));
+
+        map<int, pair<int, int>> stamps = eulerInOut(root);
+        assert(stamps.size() == size_t(size));
+
+        // Every subtree is a CONTIGUOUS timestamp range of its own size - the
+        // property that turns subtree queries into range queries.
+        function<void(TreeNode*)> check = [&](TreeNode* node) {
+            if (!node) return;
+            auto [tin, tout] = stamps[node->val];
+            vector<int> members;
+            subtreeValues(node, members);
+            assert(tout - tin == int(members.size()));
+            for (int other : members) {
+                assert(tin <= stamps[other].first && stamps[other].first < tout);
+            }
+            check(node->left);
+            check(node->right);
+        };
+        check(root);
+        deleteTree(root);
+    }
+
     cout << "11-Trees (C++): all checks passed\n";
     return 0;
 }

@@ -126,6 +126,54 @@ square root. Bound the range, write the predicate, confirm monotonicity.
 | `SearchMatrix` | `O(log(r*c))` | `O(1)` |
 | `MinShipCapacity` | `O(n log(sum))` | `O(1)` |
 
+## Ternary search - when the predicate is not monotone
+
+Binary search needs a **monotone** predicate: "is this true from here on?".
+Some problems do not have one. If the values **rise to a single peak and then
+fall** - *unimodal* - there is no boundary to binary-search for, but the peak is
+still findable in `O(log n)`.
+
+```text
+f
+|        *
+|      *   *
+|    *       *
+|  *           *
++-------------------- x
+         ^ the peak
+```
+
+Cut the range at **two** points:
+
+```text
+if f(m1) < f(m2)   the peak is right of m1  ->  discard [low, m1]
+else               the peak is left of m2   ->  discard [m2, high]
+```
+
+Each round keeps two thirds, so it is `O(log_1.5 n)` - about 1.7x the probes of
+binary search, but binary search cannot be used here at all.
+
+> **The trap:** a **plateau**. If `f(m1) == f(m2)` because the function is flat
+> between them, the range never shrinks past the flat part. Ternary search needs
+> *strict* unimodality.
+
+**On reals**, run a fixed iteration count rather than testing convergence -
+`while high - low > 1e-9` can spin forever once the values stop changing at
+float resolution.
+
+> **And do not expect 1e-15 accuracy.** Near a smooth minimum the function is
+> locally quadratic, so being `d` away changes `f` by only `~c*d^2`. Once `d`
+> reaches about `sqrt(machine epsilon)` ~ `1.5e-8` the two probes compare
+> *equal* and the comparison is noise. That is a property of the problem, not
+> of the loop count - a function with a kink (`|x - 2.5|`) converges far
+> further, and the demo asserts both.
+
+**Where it shows up:** maximising a profit curve, the closest point on a convex
+path, "minimum time such that..." where the cost first falls then rises, and
+optimisation problems phrased as "find the best k".
+
+---
+
 ## Run the code
 
 ```bash

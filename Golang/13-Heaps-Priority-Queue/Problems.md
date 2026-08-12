@@ -18,6 +18,14 @@ Write `heap.Interface` until the five methods are automatic. Remember:
 | 11 | Network Delay Time | Dijkstra with `container/heap`. | [LeetCode 743](https://leetcode.com/problems/network-delay-time/) |
 | 12 | Minimum Cost to Connect Sticks | Always merge the two cheapest. | [LeetCode 1167](https://leetcode.com/problems/minimum-cost-to-connect-sticks/) |
 
+## Indexed priority queue
+| Problem | Hint | Link |
+|---------|------|------|
+| Network Delay Time | Dijkstra - try it with decrease-key instead of stale entries. | [LeetCode 743](https://leetcode.com/problems/network-delay-time/) |
+| Design a Stack With Increment Operation | Re-keying entries in place. | [LeetCode 1381](https://leetcode.com/problems/design-a-stack-with-increment-operation/) |
+| LFU Cache | Priorities change on every access - exactly the case a plain heap cannot serve. | [LeetCode 460](https://leetcode.com/problems/lfu-cache/) |
+| Single-Threaded CPU | A priority queue whose contents are revised as time advances. | [LeetCode 1834](https://leetcode.com/problems/single-threaded-cpu/) |
+
 ## Self-check before moving on
 
 - [ ] I can write the five `heap.Interface` methods from memory.
@@ -25,3 +33,6 @@ Write `heap.Interface` until the five methods are automatic. Remember:
 - [ ] I call `heap.Push`/`heap.Pop`, never the methods directly.
 - [ ] I use pointer receivers for `Push`/`Pop` only.
 - [ ] I know `heap.Fix` is the decrease-key operation Dijkstra needs.
+- [ ] I know why a plain heap cannot decrease-key in less than O(n).
+- [ ] I can name the second structure that fixes it and what it maps.
+- [ ] I know every swap must update BOTH the heap and the position map.

@@ -20,6 +20,14 @@ parents (pass state down)? Then write the postorder-shaped recursion.
 | 13 | Construct Binary Tree from Preorder and Inorder | Root from preorder, split with inorder. | [LeetCode 105](https://leetcode.com/problems/construct-binary-tree-from-preorder-and-inorder-traversal/) |
 | 14 | Count Complete Tree Nodes | Exploit completeness for `O(log^2 n)`. | [LeetCode 222](https://leetcode.com/problems/count-complete-tree-nodes/) |
 
+## Euler tour
+| Problem | Hint | Link |
+|---------|------|------|
+| Lowest Common Ancestor of a Binary Tree | Euler tour + RMQ, or the plain recursive version. | [LeetCode 236](https://leetcode.com/problems/lowest-common-ancestor-of-a-binary-tree/) |
+| Number of Good Leaf Nodes Pairs | Subtree ranges make the pairing tractable. | [LeetCode 1530](https://leetcode.com/problems/number-of-good-leaf-nodes-pairs/) |
+| Sum of Distances in Tree | Rerooting on a flattened tree. | [LeetCode 834](https://leetcode.com/problems/sum-of-distances-in-tree/) |
+| Create Sorted Array through Instructions | Subtree ranges plus a Fenwick tree. | [LeetCode 1649](https://leetcode.com/problems/create-sorted-array-through-instructions/) |
+
 ## Self-check before moving on
 
 - [ ] I can write all four traversals recursively and iteratively.
@@ -27,3 +35,6 @@ parents (pass state down)? Then write the postorder-shaped recursion.
 - [ ] I return "value + answer" from one pass instead of nesting traversals.
 - [ ] I know why `q.size()` must be captured before the level loop.
 - [ ] I can explain Morris traversal's `O(1)` space trick.
+- [ ] I know the Euler tour has 2n-1 entries and why.
+- [ ] I can use tin/tout to test ancestry in O(1).
+- [ ] I know a subtree is a CONTIGUOUS timestamp range, and what that buys.

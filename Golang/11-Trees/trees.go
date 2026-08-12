@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
@@ -479,6 +480,106 @@ func Deserialize(data string) *TreeNode {
 // demo
 // ============================================================================
 
+// ============================================================================
+// Euler tour - flattening a tree into an array
+// ============================================================================
+
+// EulerTour returns the full walk of a tree.
+//
+// A DFS that appends the current node every time control passes through it -
+// on the way in, and again after returning from each child. The result has
+// exactly 2n - 1 entries for an n-node tree.
+//
+// Why it matters: it turns a TREE problem into an ARRAY problem. The lowest
+// common ancestor of u and v is the SHALLOWEST node in the tour between any
+// occurrence of u and any occurrence of v - which makes LCA a range-minimum
+// query, answerable in O(1) with the sparse table from chapter 19.
+//
+//	    1
+//	   / .        tour: 1 2 4 2 5 2 1 3 1
+//	  2   3       LCA(4, 5) = the shallowest node between them = 2
+//	 / .
+//	4   5
+//
+// The three classic traversals are all projections of this one walk:
+//
+//	preorder  - take each node at its FIRST appearance
+//	inorder   - take each node at its middle appearance (binary trees)
+//	postorder - take each node at its LAST appearance
+func EulerTour(root *TreeNode) []int {
+	tour := []int{}
+	if root == nil {
+		return tour
+	}
+
+	var walk func(node *TreeNode)
+	walk = func(node *TreeNode) {
+		tour = append(tour, node.Val)
+		for _, child := range []*TreeNode{node.Left, node.Right} {
+			if child != nil {
+				walk(child)
+				tour = append(tour, node.Val) // record it again on the way back
+			}
+		}
+	}
+
+	walk(root)
+	return tour
+}
+
+// EulerInOut returns entry and exit timestamps per node value.
+//
+// The other Euler tour, and the more useful one in practice. Stamp a counter
+// on the way in and on the way out. Then:
+//
+//	u is an ancestor of v   <=>   tin[u] <= tin[v] and tout[v] <= tout[u]
+//
+// An ancestor test in O(1), with no walking. Better still, a node's subtree
+// occupies the CONTIGUOUS range [tin, tout) of the entry order - so "sum over
+// a subtree" or "add x to a whole subtree" becomes a range query on a flat
+// array, which a Fenwick or segment tree handles in O(log n).
+//
+// This is the standard preprocessing for subtree queries, and half of
+// heavy-light decomposition.
+//
+// Iterative, to avoid blowing the stack on a degenerate (list-shaped) tree.
+func EulerInOut(root *TreeNode) map[int][2]int {
+	times := map[int][2]int{}
+	if root == nil {
+		return times
+	}
+
+	type frame struct {
+		node    *TreeNode
+		leaving bool
+	}
+
+	clock := 0
+	entry := map[int]int{}
+	stack := []frame{{root, false}}
+
+	for len(stack) > 0 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if top.leaving {
+			times[top.node.Val] = [2]int{entry[top.node.Val], clock}
+			continue
+		}
+
+		entry[top.node.Val] = clock
+		clock++
+		stack = append(stack, frame{top.node, true}) // schedule the exit stamp
+		// Right first, so the left child comes off the stack first.
+		for _, child := range []*TreeNode{top.node.Right, top.node.Left} {
+			if child != nil {
+				stack = append(stack, frame{child, false})
+			}
+		}
+	}
+	return times
+}
+
 func assert(cond bool, msg string) {
 	if !cond {
 		panic("assertion failed: " + msg)
@@ -583,6 +684,85 @@ func main() {
 	assert(equal(Inorder(rebuilt), Inorder(tree)), "round trip inorder")
 	assert(Serialize(rebuilt) == encoded, "round trip is stable")
 	assert(Deserialize(Serialize(nil)) == nil, "nil round trip")
+	// --- Euler tour ----------------------------------------------------------
+	//        1
+	//       / \
+	//      2   3
+	//     / \
+	//    4   5
+	eulerTree := BuildTree([]int{1, 2, 3, 4, 5})
+	assert(fmt.Sprint(EulerTour(eulerTree)) == "[1 2 4 2 5 2 1 3 1]", "2n-1 entries")
+	assert(len(EulerTour(nil)) == 0, "an empty tree has an empty tour")
+	assert(fmt.Sprint(EulerTour(&TreeNode{Val: 7})) == "[7]", "a lone node")
+
+	times := EulerInOut(eulerTree)
+	assert(times[1] == [2]int{0, 5}, "the root spans everything")
+	assert(times[4] == [2]int{2, 3}, "leaves are width 1")
+	assert(times[5] == [2]int{3, 4}, "leaves are width 1")
+	assert(len(EulerInOut(nil)) == 0, "an empty tree has no timestamps")
+
+	// The ancestor test the timestamps exist for.
+	isAncestor := func(u, v int) bool {
+		return times[u][0] <= times[v][0] && times[v][1] <= times[u][1]
+	}
+	assert(isAncestor(1, 4) && isAncestor(2, 5), "ancestors detected")
+	assert(!isAncestor(3, 4) && !isAncestor(4, 2), "non-ancestors rejected")
+	assert(isAncestor(3, 3), "a node contains itself")
+
+	// Against brute force on random trees.
+	eulerRng := rand.New(rand.NewSource(11))
+	nextValue := 0
+	var randomTree func(size int) *TreeNode
+	randomTree = func(size int) *TreeNode {
+		if size == 0 {
+			return nil
+		}
+		leftSize := eulerRng.Intn(size) // 0..size-1
+		node := &TreeNode{Val: nextValue}
+		nextValue++
+		node.Left = randomTree(leftSize)
+		node.Right = randomTree(size - 1 - leftSize)
+		return node
+	}
+
+	var subtreeValues func(node *TreeNode) []int
+	subtreeValues = func(node *TreeNode) []int {
+		if node == nil {
+			return nil
+		}
+		out := []int{node.Val}
+		out = append(out, subtreeValues(node.Left)...)
+		return append(out, subtreeValues(node.Right)...)
+	}
+
+	for trial := 0; trial < 60; trial++ {
+		size := eulerRng.Intn(40) + 1
+		root := randomTree(size)
+
+		assert(len(EulerTour(root)) == 2*size-1, "the tour has 2n-1 entries")
+
+		stamps := EulerInOut(root)
+		assert(len(stamps) == size, "every node is stamped once")
+
+		// Every subtree is a CONTIGUOUS timestamp range of its own size - the
+		// property that turns subtree queries into range queries.
+		var check func(node *TreeNode)
+		check = func(node *TreeNode) {
+			if node == nil {
+				return
+			}
+			span := stamps[node.Val]
+			members := subtreeValues(node)
+			assert(span[1]-span[0] == len(members), "subtree spans its own size")
+			for _, other := range members {
+				assert(span[0] <= stamps[other][0] && stamps[other][0] < span[1],
+					"subtree members lie inside the range")
+			}
+			check(node.Left)
+			check(node.Right)
+		}
+		check(root)
+	}
 
 	fmt.Println("11-Trees (Go): all checks passed")
 }

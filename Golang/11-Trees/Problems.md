@@ -20,6 +20,14 @@ Use Go's multiple return values to carry "the value the parent needs" and
 | 13 | Construct Binary Tree from Preorder and Inorder | Root from preorder, split with inorder. | [LeetCode 105](https://leetcode.com/problems/construct-binary-tree-from-preorder-and-inorder-traversal/) |
 | 14 | Sum Root to Leaf Numbers | Pass the accumulated number downward. | [LeetCode 129](https://leetcode.com/problems/sum-root-to-leaf-numbers/) |
 
+## Euler tour
+| Problem | Hint | Link |
+|---------|------|------|
+| Lowest Common Ancestor of a Binary Tree | Euler tour + RMQ, or the plain recursive version. | [LeetCode 236](https://leetcode.com/problems/lowest-common-ancestor-of-a-binary-tree/) |
+| Number of Good Leaf Nodes Pairs | Subtree ranges make the pairing tractable. | [LeetCode 1530](https://leetcode.com/problems/number-of-good-leaf-nodes-pairs/) |
+| Sum of Distances in Tree | Rerooting on a flattened tree. | [LeetCode 834](https://leetcode.com/problems/sum-of-distances-in-tree/) |
+| Create Sorted Array through Instructions | Subtree ranges plus a Fenwick tree. | [LeetCode 1649](https://leetcode.com/problems/create-sorted-array-through-instructions/) |
+
 ## Self-check before moving on
 
 - [ ] I can write all four traversals recursively and iteratively.
@@ -27,3 +35,6 @@ Use Go's multiple return values to carry "the value the parent needs" and
 - [ ] I clone slices before appending them to a results slice.
 - [ ] I return "value + answer" from one pass instead of nesting traversals.
 - [ ] I know a nil `*TreeNode` is a complete, valid empty tree.
+- [ ] I know the Euler tour has 2n-1 entries and why.
+- [ ] I can use tin/tout to test ancestry in O(1).
+- [ ] I know a subtree is a CONTIGUOUS timestamp range, and what that buys.

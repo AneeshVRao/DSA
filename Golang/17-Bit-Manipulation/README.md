@@ -113,6 +113,42 @@ for sub := mask; ; sub = (sub - 1) & mask { ... } // all submasks
 | `SubsetsBitmask` | `O(n * 2^n)` | `O(1)` extra |
 | `ReverseBits` | `O(32)` | `O(1)` |
 
+## Gray code - one bit at a time
+
+A **Gray code** orders the integers so that **consecutive values differ in
+exactly one bit**. Plain binary does not: `3 -> 4` is `011 -> 100`, three bits
+flipping at once.
+
+```text
+G(n) = n XOR (n >> 1)
+
+n:  0  1  2  3  4  5  6  7
+G:  0  1  3  2  6  7  5  4
+b: 000 001 011 010 110 111 101 100
+        ^   ^   ^   ^   ^   ^   ^     one bit changes each step
+```
+
+**Why one xor does it.** Adding 1 to `n` flips a trailing run of 1s to 0s and
+the 0 above them to 1. Shifting right by one and xoring lines each bit up with
+its neighbour, so the flipped run cancels and only the boundary survives -
+exactly one changed bit.
+
+**Inverting it** is a prefix-xor: each binary bit is the xor of all Gray bits at
+or above it. Doubling the shift folds the whole prefix in `log(bits)` steps.
+
+The sequence can also be built by **reflection**: take the `bits-1` sequence,
+then append its *reverse* with the top bit set. That is why it is formally a
+"reflected binary code", and unlike the xor trick it generalises to
+non-power-of-two alphabets. The demo checks the two constructions against each
+other.
+
+**Why anyone cares:** rotary encoders and ADCs - a misread during a transition
+gives a *neighbouring* value rather than a wild one, because only one bit is
+ever in flux. Also Karnaugh maps, genetic-algorithm encodings, and generating
+subsets so consecutive ones differ by a single element.
+
+---
+
 ## Run the code
 
 ```bash

@@ -125,6 +125,51 @@ The priority queue is what turns `O(V^2)` into `O(E log V)`.
 | `MergeKSorted` | `O(N log k)` | `O(k)` |
 | `MedianFinder.Add` / `Median` | `O(log n)` / `O(1)` | `O(n)` |
 
+## Indexed priority queue - a heap whose keys can change
+
+A plain binary heap can only see its root. To lower the priority of some
+arbitrary item you would first have to **find** it - `O(n)` - which defeats the
+purpose. That is why the usual Dijkstra sidesteps the problem entirely:
+
+```text
+push a duplicate entry, and skip stale ones on pop:
+    if distance > best[node]: continue
+```
+
+Correct, and usually fine - but the heap grows to `O(E)` entries instead of
+`O(V)`.
+
+**The fix** is a second structure: a map from item to its current **position**
+in the heap array.
+
+```text
+heap[i]         the item at heap position i
+position[item]  the heap position of that item   (the inverse map)
+```
+
+Now any item is located in `O(1)` and re-sifted in `O(log n)`, which makes
+`change_priority` and `remove(item)` real operations.
+
+> **Every swap must update BOTH structures.** That is the entire implementation
+> difficulty. One forgotten position write and the map silently goes stale - it
+> surfaces much later as a wrong answer, not a crash. The demo therefore
+> re-verifies the heap order *and* the position map after every one of 7200
+> random operations, rather than only at the end.
+
+| Operation | Plain heap | Indexed heap |
+|-----------|-----------|--------------|
+| push / pop | `O(log n)` | `O(log n)` |
+| peek | `O(1)` | `O(1)` |
+| **change priority of an item** | `O(n)` | **`O(log n)`** |
+| **remove an arbitrary item** | `O(n)` | **`O(log n)`** |
+| contains | `O(n)` | **`O(1)`** |
+
+**Where it pays off:** Dijkstra and Prim with a true decrease-key (the heap
+stays `O(V)`), A* with reopened nodes, schedulers where a queued job's priority
+is revised, and LRU/LFU caches with an evictable score per key.
+
+---
+
 ## Run the code
 
 ```bash

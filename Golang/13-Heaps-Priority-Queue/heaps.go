@@ -7,6 +7,7 @@ package main
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 )
@@ -379,6 +380,183 @@ func (q *TaskQueue) Len() int { return q.heap.Len() }
 // demo
 // ============================================================================
 
+// ============================================================================
+// Indexed priority queue - a heap whose keys can be CHANGED
+// ============================================================================
+
+// IndexedPriorityQueue is a min-heap supporting ChangePriority and Remove in
+// O(log n).
+//
+// THE PROBLEM. A plain binary heap can only look at its root. To lower the
+// priority of an arbitrary item you would first have to FIND it - O(n) - which
+// defeats the point. So the standard workaround in Dijkstra is to push a
+// duplicate entry and skip stale ones on pop:
+//
+//	if (distance > best[node]) continue;   // stale entry, ignore it
+//
+// Correct, and usually fine, but the heap can grow to O(E) entries not O(V).
+//
+// THE FIX. Keep a second structure - a map from item to its current position
+// in the heap array - updated on every swap. Now any item is located in O(1)
+// and re-sifted in O(log n).
+//
+//	heap[i]         the item at heap position i
+//	position[item]  the heap position of that item   (the inverse map)
+//
+// Every swap must update BOTH. That is the entire implementation difficulty:
+// one forgotten position write and the map silently goes stale, which surfaces
+// much later as a wrong answer rather than a crash.
+//
+// WHERE IT PAYS OFF:
+//   - Dijkstra and Prim with decrease-key: the heap stays O(V) entries
+//   - A* with reopened nodes
+//   - schedulers where a queued job's priority is revised
+//   - LRU/LFU caches with an evictable score per key
+//
+// Written by hand rather than on container/heap: that interface has no way to
+// express "find this item", which is the entire point here.
+type IndexedPriorityQueue struct {
+	heap     []ipqEntry
+	position map[string]int // item -> heap index
+}
+
+type ipqEntry struct {
+	Priority int
+	Item     string
+}
+
+func NewIndexedPriorityQueue() *IndexedPriorityQueue {
+	return &IndexedPriorityQueue{position: map[string]int{}}
+}
+
+func (q *IndexedPriorityQueue) Len() int { return len(q.heap) }
+
+func (q *IndexedPriorityQueue) Contains(item string) bool {
+	_, ok := q.position[item]
+	return ok
+}
+
+// swap is the ONE place the two structures are kept in step.
+func (q *IndexedPriorityQueue) swap(i, j int) {
+	q.heap[i], q.heap[j] = q.heap[j], q.heap[i]
+	q.position[q.heap[i].Item] = i
+	q.position[q.heap[j].Item] = j
+}
+
+func (q *IndexedPriorityQueue) siftUp(i int) {
+	for i > 0 {
+		parent := (i - 1) / 2
+		if q.heap[i].Priority >= q.heap[parent].Priority {
+			break
+		}
+		q.swap(i, parent)
+		i = parent
+	}
+}
+
+func (q *IndexedPriorityQueue) siftDown(i int) {
+	for {
+		smallest := i
+		for _, child := range []int{2*i + 1, 2*i + 2} {
+			if child < len(q.heap) && q.heap[child].Priority < q.heap[smallest].Priority {
+				smallest = child
+			}
+		}
+		if smallest == i {
+			return
+		}
+		q.swap(i, smallest)
+		i = smallest
+	}
+}
+
+// Push inserts an item, or updates it if already present. O(log n).
+func (q *IndexedPriorityQueue) Push(item string, priority int) {
+	if _, ok := q.position[item]; ok {
+		_ = q.ChangePriority(item, priority)
+		return
+	}
+	q.heap = append(q.heap, ipqEntry{priority, item})
+	q.position[item] = len(q.heap) - 1
+	q.siftUp(len(q.heap) - 1)
+}
+
+// Peek returns the smallest entry without removing it. O(1).
+func (q *IndexedPriorityQueue) Peek() (ipqEntry, error) {
+	if len(q.heap) == 0 {
+		return ipqEntry{}, fmt.Errorf("peek from an empty priority queue")
+	}
+	return q.heap[0], nil
+}
+
+// Pop removes and returns the smallest entry. O(log n).
+func (q *IndexedPriorityQueue) Pop() (ipqEntry, error) {
+	if len(q.heap) == 0 {
+		return ipqEntry{}, fmt.Errorf("pop from an empty priority queue")
+	}
+	return q.removeAt(0), nil
+}
+
+// ChangePriority re-keys an item already in the queue. O(log n).
+//
+// Sift whichever way the change calls for - decrease-key moves the item up,
+// increase-key moves it down.
+func (q *IndexedPriorityQueue) ChangePriority(item string, priority int) error {
+	i, ok := q.position[item]
+	if !ok {
+		return fmt.Errorf("%q is not in the queue", item)
+	}
+	old := q.heap[i].Priority
+	q.heap[i].Priority = priority
+	if priority < old {
+		q.siftUp(i)
+	} else if priority > old {
+		q.siftDown(i)
+	}
+	return nil
+}
+
+// Remove takes out an arbitrary item. O(log n) - impossible with a plain heap.
+func (q *IndexedPriorityQueue) Remove(item string) (ipqEntry, error) {
+	i, ok := q.position[item]
+	if !ok {
+		return ipqEntry{}, fmt.Errorf("%q is not in the queue", item)
+	}
+	return q.removeAt(i), nil
+}
+
+// removeAt swaps the target with the last slot, drops it, then re-sifts.
+func (q *IndexedPriorityQueue) removeAt(i int) ipqEntry {
+	last := len(q.heap) - 1
+	q.swap(i, last)
+	removed := q.heap[last]
+	q.heap = q.heap[:last]
+	delete(q.position, removed.Item)
+
+	if i < last { // something was moved into position i
+		q.siftDown(i)
+		q.siftUp(i) // it may belong ABOVE its new parent
+	}
+	return removed
+}
+
+// IsValid is exposed for the self-check: the invariant must hold after every
+// operation, both the heap order AND the position map.
+func (q *IndexedPriorityQueue) IsValid() bool {
+	if len(q.position) != len(q.heap) {
+		return false
+	}
+	for i, entry := range q.heap {
+		if q.position[entry.Item] != i {
+			return false
+		}
+		if i > 0 && q.heap[(i-1)/2].Priority > entry.Priority {
+			return false
+		}
+	}
+	return true
+}
+
 func assert(cond bool, msg string) {
 	if !cond {
 		panic("assertion failed: " + msg)
@@ -488,6 +666,90 @@ func main() {
 	name, _ = tasks.NextTask()
 	assert(name == "write tests", "last task")
 	assert(tasks.Len() == 0, "queue drained")
+	// --- Indexed priority queue ----------------------------------------------
+	ipq := NewIndexedPriorityQueue()
+	ipq.Push("a", 5)
+	ipq.Push("b", 3)
+	ipq.Push("c", 8)
+	ipq.Push("d", 1)
+
+	assert(ipq.Len() == 4, "four items queued")
+	assert(ipq.Contains("c") && !ipq.Contains("z"), "membership test")
+
+	ipqTop, ipqErr := ipq.Peek()
+	assert(ipqErr == nil && ipqTop == ipqEntry{1, "d"}, "smallest is d")
+
+	// The operation a plain heap cannot do: re-key an interior item.
+	assert(ipq.ChangePriority("c", 0) == nil, "decrease-key succeeds")
+	ipqTop, _ = ipq.Peek()
+	assert(ipqTop.Item == "c", "c rose to the ipqTop")
+	assert(ipq.ChangePriority("c", 100) == nil, "increase-key succeeds")
+	ipqTop, _ = ipq.Peek()
+	assert(ipqTop.Item == "d", "c sank again")
+
+	// Remove from the middle, also impossible with a plain heap.
+	ipqRemoved, ipqErr2 := ipq.Remove("a")
+	assert(ipqErr2 == nil && ipqRemoved == ipqEntry{5, "a"}, "removed from the middle")
+	assert(!ipq.Contains("a") && ipq.Len() == 3, "a is gone")
+
+	for _, expected := range []string{"d", "b", "c"} {
+		entry, popErr := ipq.Pop()
+		assert(popErr == nil && entry.Item == expected, "popped in priority order")
+	}
+	assert(ipq.Len() == 0, "the queue is empty")
+
+	_, ipqErr = ipq.Pop()
+	assert(ipqErr != nil, "popping an empty queue is an error")
+	_, ipqErr = ipq.Peek()
+	assert(ipqErr != nil, "peeking an empty queue is an error")
+
+	// Push on an existing item updates rather than duplicating.
+	ipq.Push("x", 5)
+	ipq.Push("x", 2)
+	ipqTop, _ = ipq.Peek()
+	assert(ipq.Len() == 1 && ipqTop.Priority == 2, "push updates in place")
+
+	// Against a reference map, with the invariant re-verified after EVERY
+	// operation - a stale index would otherwise stay silent until much later.
+	ipqRng := rand.New(rand.NewSource(13))
+	for trial := 0; trial < 60; trial++ {
+		queue := NewIndexedPriorityQueue()
+		reference := map[string]int{}
+
+		for step := 0; step < 120; step++ {
+			item := fmt.Sprintf("item%d", ipqRng.Intn(15))
+			roll := ipqRng.Intn(100)
+			_, present := reference[item]
+
+			switch {
+			case roll < 45:
+				priority := ipqRng.Intn(101)
+				queue.Push(item, priority)
+				reference[item] = priority
+			case roll < 65 && present:
+				priority := ipqRng.Intn(101)
+				assert(queue.ChangePriority(item, priority) == nil, "re-key succeeds")
+				reference[item] = priority
+			case roll < 80 && present:
+				entry, removeErr := queue.Remove(item)
+				assert(removeErr == nil && entry.Priority == reference[item],
+					"remove returns the stored priority")
+				delete(reference, item)
+			case len(reference) > 0:
+				lowest := math.MaxInt64
+				for _, value := range reference {
+					lowest = min(lowest, value)
+				}
+				entry, popErr := queue.Pop()
+				assert(popErr == nil && entry.Priority == lowest, "pop returns the minimum")
+				assert(reference[entry.Item] == entry.Priority, "and the right item")
+				delete(reference, entry.Item)
+			}
+
+			assert(queue.Len() == len(reference), "size stays honest")
+			assert(queue.IsValid(), "heap order AND position map intact")
+		}
+	}
 
 	fmt.Println("13-Heaps-Priority-Queue (Go): all checks passed")
 }

@@ -18,6 +18,14 @@ take the next cheapest". Keep the heap size k, not n.
 | 11 | IPO | Two heaps: affordable by profit, rest by capital. | [LeetCode 502](https://leetcode.com/problems/ipo/) |
 | 12 | Network Delay Time | Dijkstra with a priority queue. | [LeetCode 743](https://leetcode.com/problems/network-delay-time/) |
 
+## Indexed priority queue
+| Problem | Hint | Link |
+|---------|------|------|
+| Network Delay Time | Dijkstra - try it with decrease-key instead of stale entries. | [LeetCode 743](https://leetcode.com/problems/network-delay-time/) |
+| Design a Stack With Increment Operation | Re-keying entries in place. | [LeetCode 1381](https://leetcode.com/problems/design-a-stack-with-increment-operation/) |
+| LFU Cache | Priorities change on every access - exactly the case a plain heap cannot serve. | [LeetCode 460](https://leetcode.com/problems/lfu-cache/) |
+| Single-Threaded CPU | A priority queue whose contents are revised as time advances. | [LeetCode 1834](https://leetcode.com/problems/single-threaded-cpu/) |
+
 ## Self-check before moving on
 
 - [ ] I can implement sift up and sift down from memory.
@@ -25,3 +33,6 @@ take the next cheapest". Keep the heap size k, not n.
 - [ ] I know the comparator is inverted relative to `sort`.
 - [ ] I use a min-heap of size k for the k largest elements.
 - [ ] I know why building a heap is `O(n)` but n pushes are `O(n log n)`.
+- [ ] I know why a plain heap cannot decrease-key in less than O(n).
+- [ ] I can name the second structure that fixes it and what it maps.
+- [ ] I know every swap must update BOTH the heap and the position map.

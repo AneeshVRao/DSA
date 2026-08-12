@@ -20,6 +20,14 @@ with `lower_bound`/`upper_bound` and compare.
 | 13 | Search a 2D Matrix | Flatten the index. | [LeetCode 74](https://leetcode.com/problems/search-a-2d-matrix/) |
 | 14 | Aggressive Cows | Binary search the minimum distance. | [GfG](https://www.geeksforgeeks.org/problems/aggressive-cows/1) |
 
+## Ternary search
+| Problem | Hint | Link |
+|---------|------|------|
+| Peak Index in a Mountain Array | The definition of unimodal - binary search on the slope also works. | [LeetCode 852](https://leetcode.com/problems/peak-index-in-a-mountain-array/) |
+| Find in Mountain Array | Ternary search for the peak, then binary search each side. | [LeetCode 1095](https://leetcode.com/problems/find-in-mountain-array/) |
+| Minimize Max Distance to Gas Station | The cost falls then rises in the answer. | [LeetCode 774](https://leetcode.com/problems/minimize-max-distance-to-gas-station/) |
+| Maximum Value at a Given Index | Unimodal in the chosen peak height. | [LeetCode 1802](https://leetcode.com/problems/maximum-value-at-a-given-index-in-a-bounded-array/) |
+
 ## Self-check before moving on
 
 - [ ] I never write `(lo + hi) / 2`.
@@ -27,3 +35,6 @@ with `lower_bound`/`upper_bound` and compare.
 - [ ] I know `std::lower_bound` on a `set` is `O(n)` and the member is `O(log n)`.
 - [ ] I can recognise "minimum X such that ..." as binary search on the answer.
 - [ ] I use `long long` when the search range can exceed 2 * 10^9.
+- [ ] I know ternary search needs UNIMODALITY, not monotonicity.
+- [ ] I know why it breaks on a plateau.
+- [ ] I know the float version caps out near sqrt(machine epsilon).

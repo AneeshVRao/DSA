@@ -18,6 +18,14 @@ The tell for a heap: "kth largest", "top k", "median of a stream", "merge k",
 | 11 | Sliding Window Median | Two heaps with lazy deletion. | [LeetCode 480](https://leetcode.com/problems/sliding-window-median/) |
 | 12 | Minimum Cost to Connect Sticks | Always merge the two cheapest. | [LeetCode 1167](https://leetcode.com/problems/minimum-cost-to-connect-sticks/) |
 
+## Indexed priority queue
+| Problem | Hint | Link |
+|---------|------|------|
+| Network Delay Time | Dijkstra - try it with decrease-key instead of stale entries. | [LeetCode 743](https://leetcode.com/problems/network-delay-time/) |
+| Design a Stack With Increment Operation | Re-keying entries in place. | [LeetCode 1381](https://leetcode.com/problems/design-a-stack-with-increment-operation/) |
+| LFU Cache | Priorities change on every access - exactly the case a plain heap cannot serve. | [LeetCode 460](https://leetcode.com/problems/lfu-cache/) |
+| Single-Threaded CPU | A priority queue whose contents are revised as time advances. | [LeetCode 1834](https://leetcode.com/problems/single-threaded-cpu/) |
+
 ## Self-check before moving on
 
 - [ ] I can implement sift up and sift down from memory.
@@ -25,3 +33,6 @@ The tell for a heap: "kth largest", "top k", "median of a stream", "merge k",
 - [ ] I use a MIN-heap of size k for the k LARGEST elements.
 - [ ] I know `heapq` is min-only and how to fake a max-heap.
 - [ ] I add a counter to break priority ties safely.
+- [ ] I know why a plain heap cannot decrease-key in less than O(n).
+- [ ] I can name the second structure that fixes it and what it maps.
+- [ ] I know every swap must update BOTH the heap and the position map.

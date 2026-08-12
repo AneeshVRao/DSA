@@ -18,6 +18,13 @@ value, try XOR first.
 | 11 | Bitwise AND of Numbers Range | The answer is the common prefix. | [LeetCode 201](https://leetcode.com/problems/bitwise-and-of-numbers-range/) |
 | 12 | Maximum XOR of Two Numbers in an Array | Bitwise trie (chapter 18). | [LeetCode 421](https://leetcode.com/problems/maximum-xor-of-two-numbers-in-an-array/) |
 
+## Gray code
+| Problem | Hint | Link |
+|---------|------|------|
+| Gray Code | `n ^ (n >> 1)`, or build it by reflection. | [LeetCode 89](https://leetcode.com/problems/gray-code/) |
+| Circular Permutation in Binary Representation | A Gray code sequence rotated to start at `start`. | [LeetCode 1238](https://leetcode.com/problems/circular-permutation-in-binary-representation/) |
+| Minimum One Bit Operations to Make Integers Zero | This is the Gray code INVERSE in disguise. | [LeetCode 1611](https://leetcode.com/problems/minimum-one-bit-operations-to-make-integers-zero/) |
+
 ## Self-check before moving on
 
 - [ ] I know `x ^ x == 0` and `x ^ 0 == x`, and what they buy me.
@@ -25,3 +32,5 @@ value, try XOR first.
 - [ ] I write `1LL << i` when `i` can reach 31 or more.
 - [ ] I know shifting by >= the type width is undefined behaviour.
 - [ ] I know `__builtin_popcount` / `std::popcount` and when to reach for `bitset`.
+- [ ] I can derive `G(n) = n ^ (n >> 1)` and explain why one bit changes.
+- [ ] I can build the sequence by reflection as well as by xor.
