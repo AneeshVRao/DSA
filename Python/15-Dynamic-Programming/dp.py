@@ -8,7 +8,9 @@ Run:  python dp.py
 from __future__ import annotations
 
 import bisect
+import random
 from functools import lru_cache
+from itertools import permutations
 
 
 # ============================================================================
@@ -323,6 +325,227 @@ def min_path_sum(grid: list[list[int]]) -> int:
 
 
 # ============================================================================
+# 7. Interval (partition) DP
+# ============================================================================
+def matrix_chain_order(dimensions: list[int]) -> int:
+    """Fewest scalar multiplications to multiply a chain of matrices. O(n^3).
+
+    Matrix i has shape dimensions[i] x dimensions[i+1], so n matrices need
+    n+1 numbers. Multiplying a p x q by a q x r costs p*q*r scalar multiplies.
+    Matrix product is ASSOCIATIVE but not commutative: the order of the
+    parenthesisation is free to choose, and the cost difference is enormous.
+    For 10x30, 30x5, 5x60:
+        ((AB)C) = 10*30*5 + 10*5*60  = 1500 + 3000  =  4500
+        (A(BC)) = 30*5*60 + 10*30*60 = 9000 + 18000 = 27000
+    Six times the work for the same answer.
+
+    This is the archetypal INTERVAL DP. The shape:
+
+        cost[i][j] = min over every split point k in (i, j) of
+                     cost[i][k] + cost[k][j] + (price of joining the two halves)
+
+    The subproblem is a CONTIGUOUS RANGE, and the recurrence tries every way to
+    cut it in two. Two consequences that catch people out:
+
+      1. Iterate by INCREASING LENGTH, not by index. cost[i][j] depends on
+         strictly shorter intervals, so they must all exist first. A plain
+         `for i: for j:` double loop reads uninitialised cells.
+      2. It is O(n^3): O(n^2) intervals, each scanning O(n) split points.
+
+    Same skeleton as burst_balloons below, optimal BST construction, "minimum
+    cost to cut a stick" and polygon triangulation. Once you see "choose where
+    to split a range", it is this.
+    """
+    n = len(dimensions) - 1                      # number of matrices
+    if n <= 1:
+        return 0                                 # nothing to multiply
+
+    cost = [[0] * (n + 1) for _ in range(n + 1)]
+
+    for length in range(2, n + 1):               # INCREASING LENGTH - see above
+        for i in range(n - length + 1):
+            j = i + length                       # half-open interval [i, j)
+            # Left half yields a dimensions[i] x dimensions[k] matrix, right
+            # half a dimensions[k] x dimensions[j]. Joining them costs the
+            # product of the three dimensions.
+            cost[i][j] = min(
+                cost[i][k] + cost[k][j]
+                + dimensions[i] * dimensions[k] * dimensions[j]
+                for k in range(i + 1, j)         # every split point
+            )
+
+    return cost[0][n]
+
+
+def burst_balloons(balloons: list[int]) -> int:
+    """Maximum coins from bursting balloons, each paying left*self*right. O(n^3).
+
+    The trap: bursting a balloon changes its neighbours, so "which do I burst
+    first?" gives a subproblem that is no longer an interval - the recursion
+    does not close.
+
+    The fix is to reverse the question. Instead of the first balloon to burst,
+    pick the LAST one in each range. If k is last in the open interval (i, j),
+    then everything strictly inside was burst before it, so when k pops its
+    neighbours are exactly i and j - which are fixed by the interval. Now the
+    two sides are independent and the recursion closes:
+
+        best[i][j] = max over k in (i, j) of
+                     best[i][k] + best[k][j] + padded[i]*padded[k]*padded[j]
+
+    Padding with 1 at each end removes the boundary special-case (an absent
+    neighbour multiplies by 1).
+
+    "Think about the last one, not the first" is the single most transferable
+    idea in interval DP.
+    """
+    padded = [1] + balloons + [1]
+    n = len(padded)
+    best = [[0] * n for _ in range(n)]
+
+    for length in range(2, n):                   # length of the open interval
+        for i in range(n - length):
+            j = i + length
+            for k in range(i + 1, j):            # k is burst LAST in (i, j)
+                best[i][j] = max(
+                    best[i][j],
+                    best[i][k] + best[k][j] + padded[i] * padded[k] * padded[j],
+                )
+
+    return best[0][n - 1]
+
+
+def min_cost_to_cut_stick(length: int, cuts: list[int]) -> int:
+    """Cheapest order of cuts, each costing the length of the piece cut. O(m^3).
+
+    Identical skeleton with the ends padded in as fake cuts at 0 and `length`.
+    Sorting matters: the DP is over ADJACENT cut positions, which only form
+    intervals once the positions are in order.
+    """
+    points = sorted([0] + cuts + [length])
+    m = len(points)
+    cost = [[0] * m for _ in range(m)]
+
+    for span in range(2, m):
+        for i in range(m - span):
+            j = i + span
+            # The piece being cut always spans points[i]..points[j], whichever
+            # cut is made first - so that price is a constant here.
+            cost[i][j] = points[j] - points[i] + min(
+                cost[i][k] + cost[k][j] for k in range(i + 1, j)
+            )
+
+    return cost[0][m - 1]
+
+
+# ============================================================================
+# 8. Bitmask DP
+# ============================================================================
+def travelling_salesman(distance: list[list[int]]) -> int:
+    """Shortest tour visiting every city once and returning. O(2^n * n^2).
+
+    The Held-Karp algorithm, and the canonical BITMASK DP.
+
+    The state has to remember WHICH cities have been visited - not how many,
+    because which ones are left determines the remaining cost. A set of visited
+    cities is a subset of n elements, so encode it as n bits of an integer:
+
+        best[mask][last] = cheapest route that has visited exactly the cities
+                           in `mask` and is currently standing at `last`
+
+    2^n * n states, each extended by n choices, giving O(2^n * n^2). Brute force
+    over permutations is O(n!) - for n = 20 that is 2.4e18 versus 4e8. Still
+    exponential, but the difference between "never" and "a second".
+
+    Bit operations that carry the whole method:
+        mask | (1 << c)     add city c to the set
+        mask & (1 << c)     is city c in the set?
+        mask == (1 << n) - 1  are all n cities in the set?
+
+    Every subset-flavoured problem is this shape: partition into k groups,
+    assign n tasks to n workers, shortest superstring, count Hamiltonian paths.
+    The ceiling is around n = 20-22 before 2^n stops fitting in memory.
+    """
+    n = len(distance)
+    if n <= 1:
+        return 0
+
+    # An int sentinel, not float("inf"): every value in this table is an int,
+    # and mixing the two makes the whole table a float table.
+    UNREACHABLE = sum(map(max, distance)) * n + 1
+    # Start at city 0 with only city 0 visited.
+    best = [[UNREACHABLE] * n for _ in range(1 << n)]
+    best[1][0] = 0
+
+    for mask in range(1 << n):
+        if not mask & 1:
+            continue                             # every tour starts at city 0
+        for last in range(n):
+            if best[mask][last] == UNREACHABLE:
+                continue                         # state unreachable
+            for city in range(n):
+                if mask & (1 << city):
+                    continue                     # already visited
+                nxt = mask | (1 << city)
+                candidate = best[mask][last] + distance[last][city]
+                if candidate < best[nxt][city]:
+                    best[nxt][city] = candidate
+
+    full = (1 << n) - 1
+    return min(best[full][last] + distance[last][0] for last in range(n))
+
+
+def count_perfect_matchings(compatible: list[list[bool]]) -> int:
+    """Ways to assign n tasks to n people, each to exactly one. O(2^n * n).
+
+    compatible[person][task] says whether that pairing is allowed.
+
+    The trick that halves the state: process people in a FIXED order. If the
+    mask holds the tasks already assigned, then popcount(mask) is exactly how
+    many people have been served - so the person index is implied and never
+    needs storing. The state collapses from (person, mask) to just mask.
+
+    Recognising when one dimension is recoverable from another is what makes
+    bitmask DP fit in memory.
+    """
+    n = len(compatible)
+    ways = [0] * (1 << n)
+    ways[0] = 1                                  # one way to assign nobody
+
+    for mask in range(1 << n):
+        if not ways[mask]:
+            continue
+        person = bin(mask).count("1")            # implied by the popcount
+        if person == n:
+            continue
+        for task in range(n):
+            if not mask & (1 << task) and compatible[person][task]:
+                ways[mask | (1 << task)] += ways[mask]
+
+    return ways[(1 << n) - 1]
+
+
+def subset_sum_partition_min_difference(nums: list[int]) -> int:
+    """Split into two groups with the smallest possible difference. O(n * sum).
+
+    Included here as the contrast: this is NOT bitmask DP. The state only needs
+    the reachable sums, not which elements produced them - so a set of sums
+    beats 2^n subsets by a wide margin. Reach for a bitmask only when the
+    IDENTITY of the chosen elements actually matters.
+    """
+    total = sum(nums)
+    reachable = 1                                # bit s set == sum s reachable
+    for value in nums:
+        reachable |= reachable << value          # Python ints as a bitset
+
+    best = total
+    for half in range(total // 2 + 1):
+        if reachable >> half & 1:
+            best = min(best, total - 2 * half)
+    return best
+
+
+# ============================================================================
 # demo
 # ============================================================================
 def demo() -> None:
@@ -393,7 +616,115 @@ def demo() -> None:
     assert min_path_sum([[1, 2, 3], [4, 5, 6]]) == 12
     assert min_path_sum([]) == 0
 
+    # --- Interval DP ---------------------------------------------------------
+    # 10x30, 30x5, 5x60: ((AB)C) costs 4500, (A(BC)) costs 27000.
+    assert matrix_chain_order([10, 30, 5, 60]) == 4500
+    assert matrix_chain_order([40, 20, 30, 10, 30]) == 26000
+    assert matrix_chain_order([5, 10]) == 0            # a single matrix
+    assert matrix_chain_order([7]) == 0                # no matrices at all
+
+    assert burst_balloons([3, 1, 5, 8]) == 167
+    assert burst_balloons([1, 5]) == 10
+    assert burst_balloons([9]) == 9
+    assert burst_balloons([]) == 0
+
+    assert min_cost_to_cut_stick(7, [1, 3, 4, 5]) == 16
+    assert min_cost_to_cut_stick(9, [5, 6, 1, 4, 2]) == 22
+
+    # Against brute force over every parenthesisation / burst order.
+    random.seed(15)
+
+    def brute_matrix_chain(dims: list[int]) -> int:
+        @lru_cache(maxsize=None)
+        def solve(i: int, j: int) -> int:
+            if j - i <= 1:
+                return 0
+            return min(solve(i, k) + solve(k, j) + dims[i] * dims[k] * dims[j]
+                       for k in range(i + 1, j))
+        return solve(0, len(dims) - 1)
+
+    def brute_burst(values: tuple[int, ...]) -> int:
+        """Try every possible burst order - O(n!), so keep n tiny."""
+        if not values:
+            return 0
+        best = 0
+        for i in range(len(values)):
+            left = values[i - 1] if i > 0 else 1
+            right = values[i + 1] if i + 1 < len(values) else 1
+            gain = left * values[i] * right
+            rest = values[:i] + values[i + 1:]
+            best = max(best, gain + brute_burst(rest))
+        return best
+
+    for _ in range(60):
+        dims = [random.randint(1, 20) for _ in range(random.randint(1, 7))]
+        assert matrix_chain_order(dims) == brute_matrix_chain(dims)
+
+    for _ in range(40):
+        values = [random.randint(1, 9) for _ in range(random.randint(0, 6))]
+        assert burst_balloons(values) == brute_burst(tuple(values))
+
+    # --- Bitmask DP ----------------------------------------------------------
+    # A square: 0-1-2-3-0 with unit sides and diagonals of 2.
+    square = [
+        [0, 1, 2, 1],
+        [1, 0, 1, 2],
+        [2, 1, 0, 1],
+        [1, 2, 1, 0],
+    ]
+    assert travelling_salesman(square) == 4        # walk the perimeter
+    assert travelling_salesman([[0]]) == 0
+    assert travelling_salesman([[0, 5], [5, 0]]) == 10   # there and back
+
+    identity = [[True] * 3 for _ in range(3)]
+    assert count_perfect_matchings(identity) == 6       # 3! total assignments
+    assert count_perfect_matchings([[True, False], [False, True]]) == 1
+    assert count_perfect_matchings([[True, True], [False, False]]) == 0
+
+    assert subset_sum_partition_min_difference([1, 6, 11, 5]) == 1
+    assert subset_sum_partition_min_difference([3, 3]) == 0
+    assert subset_sum_partition_min_difference([10]) == 10
+
+    # Held-Karp against brute force over every permutation.
+    for _ in range(30):
+        n = random.randint(1, 7)
+        matrix = [[0] * n for _ in range(n)]
+        for u in range(n):
+            for v in range(u + 1, n):
+                w = random.randint(1, 30)
+                matrix[u][v] = matrix[v][u] = w     # symmetric
+
+        expected = min(
+            (sum(matrix[route[i]][route[i + 1]] for i in range(len(route) - 1))
+             + matrix[route[-1]][0]
+             for route in [(0,) + p for p in permutations(range(1, n))]),
+            default=0,
+        )
+        assert travelling_salesman(matrix) == expected
+
+    # Perfect matchings against brute force over every permutation.
+    for _ in range(30):
+        n = random.randint(1, 6)
+        allowed = [[random.random() < 0.6 for _ in range(n)] for _ in range(n)]
+        expected = sum(
+            1 for assignment in permutations(range(n))
+            if all(allowed[person][task] for person, task in enumerate(assignment))
+        )
+        assert count_perfect_matchings(allowed) == expected
+
+    # Minimum partition difference against enumerating every subset.
+    for _ in range(30):
+        nums = [random.randint(1, 20) for _ in range(random.randint(1, 10))]
+        total = sum(nums)
+        best_diff = total
+        for mask in range(1 << len(nums)):
+            part = sum(v for i, v in enumerate(nums) if mask >> i & 1)
+            best_diff = min(best_diff, abs(total - 2 * part))
+        assert subset_sum_partition_min_difference(nums) == best_diff
+
     print("15-Dynamic-Programming (Python): all checks passed")
+    print("  Interval DP checked against every parenthesisation and burst order,")
+    print("  bitmask DP against every permutation")
 
 
 if __name__ == "__main__":

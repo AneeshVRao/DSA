@@ -326,6 +326,261 @@ export function minPathSum(grid) {
 // ============================================================================
 // demo
 // ============================================================================
+// ============================================================================
+// 7. Interval (partition) DP
+// ============================================================================
+/**
+ * Fewest scalar multiplications to multiply a chain of matrices. O(n^3).
+ *
+ * Matrix `i` has shape `dimensions[i] x dimensions[i+1]`, so n matrices need
+ * n+1 numbers. Multiplying a `p x q` by a `q x r` costs `p*q*r` scalar
+ * multiplies. The product is ASSOCIATIVE but not commutative, so the
+ * parenthesisation is free to choose - and the cost gap is enormous. For
+ * 10x30, 30x5, 5x60:
+ *
+ *     ((AB)C) = 10*30*5 + 10*5*60  = 1500 + 3000  =  4500
+ *     (A(BC)) = 30*5*60 + 10*30*60 = 9000 + 18000 = 27000
+ *
+ * This is the archetypal INTERVAL DP:
+ *
+ *     cost[i][j] = min over every split k in (i, j) of
+ *                  cost[i][k] + cost[k][j] + (price of joining the halves)
+ *
+ * The subproblem is a CONTIGUOUS RANGE and the recurrence tries every cut. Two
+ * things catch people out:
+ *
+ *   1. Iterate by INCREASING LENGTH, not by index. `cost[i][j]` depends on
+ *      strictly shorter intervals, so they must exist first. A plain
+ *      `for i / for j` double loop reads uninitialised cells.
+ *   2. It is `O(n^3)`: `O(n^2)` intervals, each scanning `O(n)` split points.
+ *
+ * Same skeleton as `burstBalloons`, optimal BST construction, "minimum cost to
+ * cut a stick" and polygon triangulation.
+ */
+export function matrixChainOrder(dimensions) {
+  const n = dimensions.length - 1; // number of matrices
+  if (n <= 1) return 0; // nothing to multiply
+
+  const cost = Array.from({ length: n + 1 }, () => new Array(n + 1).fill(0));
+
+  for (let length = 2; length <= n; length++) {
+    // INCREASING LENGTH
+    for (let i = 0; i + length <= n; i++) {
+      const j = i + length; // half-open [i, j)
+      cost[i][j] = Infinity;
+      for (let k = i + 1; k < j; k++) {
+        // Left half yields a dimensions[i] x dimensions[k] matrix, right half
+        // a dimensions[k] x dimensions[j]. Joining them costs the product of
+        // the three dimensions.
+        const candidate =
+          cost[i][k] + cost[k][j] + dimensions[i] * dimensions[k] * dimensions[j];
+        cost[i][j] = Math.min(cost[i][j], candidate);
+      }
+    }
+  }
+  return cost[0][n];
+}
+
+/**
+ * Maximum coins from bursting balloons, each paying `left * self * right`.
+ * O(n^3).
+ *
+ * The trap: bursting a balloon changes its neighbours, so "which do I burst
+ * first?" leaves a subproblem that is no longer an interval - the recursion
+ * does not close.
+ *
+ * Reverse the question. Instead of the FIRST balloon to burst, pick the LAST
+ * one in each range. If k is last in the open interval `(i, j)`, everything
+ * strictly inside was burst before it, so when k pops its neighbours are
+ * exactly i and j - fixed by the interval. Now the two sides are independent:
+ *
+ *     best[i][j] = max over k in (i, j) of
+ *                  best[i][k] + best[k][j] + padded[i]*padded[k]*padded[j]
+ *
+ * Padding with 1 at each end removes the boundary special case.
+ *
+ * "Think about the last one, not the first" is the most transferable idea in
+ * interval DP.
+ */
+export function burstBalloons(balloons) {
+  const padded = [1, ...balloons, 1];
+  const n = padded.length;
+  const best = Array.from({ length: n }, () => new Array(n).fill(0));
+
+  for (let length = 2; length < n; length++) {
+    // open-interval length
+    for (let i = 0; i + length < n; i++) {
+      const j = i + length;
+      for (let k = i + 1; k < j; k++) {
+        // k is burst LAST in (i, j)
+        best[i][j] = Math.max(
+          best[i][j],
+          best[i][k] + best[k][j] + padded[i] * padded[k] * padded[j],
+        );
+      }
+    }
+  }
+  return best[0][n - 1];
+}
+
+/**
+ * Cheapest order of cuts, each costing the length of the piece being cut.
+ * O(m^3).
+ *
+ * The same skeleton with the ends padded in as fake cuts at 0 and `length`.
+ * Sorting matters: the DP is over ADJACENT cut positions, which only form
+ * intervals once the positions are in order.
+ *
+ * Note `sort((a, b) => a - b)` - the default `sort()` compares as STRINGS, so
+ * `[2, 10]` would come back as `[10, 2]`.
+ */
+export function minCostToCutStick(length, cuts) {
+  const points = [0, ...cuts, length].sort((a, b) => a - b);
+  const m = points.length;
+  const cost = Array.from({ length: m }, () => new Array(m).fill(0));
+
+  for (let span = 2; span < m; span++) {
+    for (let i = 0; i + span < m; i++) {
+      const j = i + span;
+      let bestSplit = Infinity;
+      for (let k = i + 1; k < j; k++) {
+        bestSplit = Math.min(bestSplit, cost[i][k] + cost[k][j]);
+      }
+      // The piece cut always spans points[i]..points[j] whichever cut comes
+      // first, so that price is a constant here.
+      cost[i][j] = points[j] - points[i] + bestSplit;
+    }
+  }
+  return cost[0][m - 1];
+}
+
+// ============================================================================
+// 8. Bitmask DP
+// ============================================================================
+/**
+ * Shortest tour visiting every city once and returning. O(2^n * n^2).
+ *
+ * The Held-Karp algorithm, and the canonical BITMASK DP.
+ *
+ * The state must remember WHICH cities have been visited - not how many,
+ * because which ones remain determines the rest of the cost. A set of cities is
+ * a subset of n elements, so encode it as n bits of an integer:
+ *
+ *     best[mask][last] = cheapest route visiting exactly the cities in `mask`
+ *                        and currently standing at `last`
+ *
+ * `2^n * n` states, each extended n ways: `O(2^n * n^2)`. Brute force over
+ * permutations is `O(n!)` - for n = 20 that is 2.4e18 against 4e8. Still
+ * exponential, but the difference between "never" and "a second".
+ *
+ * The bit operations that carry the method:
+ *     mask | (1 << c)        add city c
+ *     mask & (1 << c)        is c in the set?
+ *     mask === (1 << n) - 1  are all n in the set?
+ *
+ * JS bitwise operators coerce to **signed 32-bit**, so `1 << 31` is negative
+ * and `1 << 32` wraps to 1. That caps this at n <= 30 even before memory does -
+ * not a real limit, since 2^30 states would never fit anyway.
+ */
+export function travellingSalesman(distance) {
+  const n = distance.length;
+  if (n <= 1) return 0;
+
+  // Start at city 0 with only city 0 visited.
+  const best = Array.from({ length: 1 << n }, () => new Array(n).fill(Infinity));
+  best[1][0] = 0;
+
+  for (let mask = 0; mask < 1 << n; mask++) {
+    if (!(mask & 1)) continue; // every tour starts at city 0
+    for (let last = 0; last < n; last++) {
+      if (best[mask][last] === Infinity) continue; // unreachable state
+      for (let city = 0; city < n; city++) {
+        if (mask & (1 << city)) continue; // already visited
+        const next = mask | (1 << city);
+        best[next][city] = Math.min(
+          best[next][city],
+          best[mask][last] + distance[last][city],
+        );
+      }
+    }
+  }
+
+  const full = (1 << n) - 1;
+  let answer = Infinity;
+  for (let last = 0; last < n; last++) {
+    answer = Math.min(answer, best[full][last] + distance[last][0]);
+  }
+  return answer;
+}
+
+/**
+ * Ways to assign n tasks to n people, each to exactly one. O(2^n * n).
+ *
+ * `compatible[person][task]` says whether that pairing is allowed.
+ *
+ * The trick that halves the state: process people in a FIXED order. If the mask
+ * holds the tasks already assigned, then `popcount(mask)` is exactly how many
+ * people have been served - so the person index is implied and never needs
+ * storing. The state collapses from `(person, mask)` to just `mask`.
+ *
+ * Recognising when one dimension is recoverable from another is what makes
+ * bitmask DP fit in memory.
+ */
+export function countPerfectMatchings(compatible) {
+  const n = compatible.length;
+  const ways = new Array(1 << n).fill(0);
+  ways[0] = 1; // one way to assign nobody
+
+  // Brian Kernighan's popcount - JS has no built-in.
+  const popcount = (x) => {
+    let count = 0;
+    while (x) {
+      x &= x - 1; // clears the lowest set bit
+      count++;
+    }
+    return count;
+  };
+
+  for (let mask = 0; mask < 1 << n; mask++) {
+    if (ways[mask] === 0) continue;
+    const person = popcount(mask); // implied, never stored
+    if (person === n) continue;
+    for (let task = 0; task < n; task++) {
+      if (!(mask & (1 << task)) && compatible[person][task]) {
+        ways[mask | (1 << task)] += ways[mask];
+      }
+    }
+  }
+  return ways[(1 << n) - 1];
+}
+
+/**
+ * Split into two groups with the smallest possible difference. O(n * sum).
+ *
+ * Included as the CONTRAST: this is not bitmask DP. The state only needs the
+ * reachable sums, not which elements produced them - so a set of sums beats
+ * `2^n` subsets by a wide margin. Reach for a bitmask only when the IDENTITY of
+ * the chosen elements actually matters.
+ */
+export function subsetSumPartitionMinDifference(nums) {
+  const total = nums.reduce((a, b) => a + b, 0);
+  const reachable = new Uint8Array(total + 1);
+  reachable[0] = 1;
+
+  for (const value of nums) {
+    for (let sum = total; sum >= value; sum--) {
+      // DOWNWARD: 0/1, not unbounded
+      if (reachable[sum - value]) reachable[sum] = 1;
+    }
+  }
+
+  let best = total;
+  for (let half = 0; half <= Math.floor(total / 2); half++) {
+    if (reachable[half]) best = Math.min(best, total - 2 * half);
+  }
+  return best;
+}
+
 function demo() {
   for (let n = 0; n < 15; n++) {
     const expected = fibNaive(n);
@@ -420,7 +675,174 @@ function demo() {
   );
   assert.equal(minPathSum([]), 0);
 
+  // --- Interval DP ----------------------------------------------------------
+  // 10x30, 30x5, 5x60: ((AB)C) costs 4500, (A(BC)) costs 27000.
+  assert.equal(matrixChainOrder([10, 30, 5, 60]), 4500);
+  assert.equal(matrixChainOrder([40, 20, 30, 10, 30]), 26000);
+  assert.equal(matrixChainOrder([5, 10]), 0); // a single matrix
+  assert.equal(matrixChainOrder([7]), 0); // no matrices at all
+
+  assert.equal(burstBalloons([3, 1, 5, 8]), 167);
+  assert.equal(burstBalloons([1, 5]), 10);
+  assert.equal(burstBalloons([9]), 9);
+  assert.equal(burstBalloons([]), 0);
+
+  assert.equal(minCostToCutStick(7, [1, 3, 4, 5]), 16);
+  assert.equal(minCostToCutStick(9, [5, 6, 1, 4, 2]), 22);
+
+  // Deterministic PRNG so a failure is always reproducible.
+  let seed = 15;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const randInt = (lo, hi) => lo + Math.floor(random() * (hi - lo + 1));
+
+  // Against plain memoised recursion - an independent route to the answer.
+  const bruteChain = (dims) => {
+    const memo = new Map();
+    const solve = (i, j) => {
+      if (j - i <= 1) return 0;
+      const key = i * 100 + j;
+      if (memo.has(key)) return memo.get(key);
+      let best = Infinity;
+      for (let k = i + 1; k < j; k++) {
+        best = Math.min(best, solve(i, k) + solve(k, j) + dims[i] * dims[k] * dims[j]);
+      }
+      memo.set(key, best);
+      return best;
+    };
+    return solve(0, dims.length - 1);
+  };
+
+  for (let trial = 0; trial < 60; trial++) {
+    const dims = Array.from({ length: randInt(1, 7) }, () => randInt(1, 20));
+    assert.equal(matrixChainOrder(dims), bruteChain(dims));
+  }
+
+  // Try every possible burst order - O(n!), so keep n tiny.
+  const bruteBurst = (values) => {
+    if (values.length === 0) return 0;
+    let best = 0;
+    for (let i = 0; i < values.length; i++) {
+      const left = i > 0 ? values[i - 1] : 1;
+      const right = i + 1 < values.length ? values[i + 1] : 1;
+      const rest = [...values.slice(0, i), ...values.slice(i + 1)];
+      best = Math.max(best, left * values[i] * right + bruteBurst(rest));
+    }
+    return best;
+  };
+
+  for (let trial = 0; trial < 40; trial++) {
+    const values = Array.from({ length: randInt(0, 6) }, () => randInt(1, 9));
+    assert.equal(burstBalloons(values), bruteBurst(values));
+  }
+
+  // --- Bitmask DP -----------------------------------------------------------
+  // A square: 0-1-2-3-0 with unit sides and diagonals of 2.
+  const square = [
+    [0, 1, 2, 1],
+    [1, 0, 1, 2],
+    [2, 1, 0, 1],
+    [1, 2, 1, 0],
+  ];
+  assert.equal(travellingSalesman(square), 4); // walk the perimeter
+  assert.equal(travellingSalesman([[0]]), 0);
+  assert.equal(
+    travellingSalesman([
+      [0, 5],
+      [5, 0],
+    ]),
+    10, // there and back
+  );
+
+  const identity = Array.from({ length: 3 }, () => new Array(3).fill(true));
+  assert.equal(countPerfectMatchings(identity), 6); // 3! assignments
+  assert.equal(
+    countPerfectMatchings([
+      [true, false],
+      [false, true],
+    ]),
+    1,
+  );
+  assert.equal(
+    countPerfectMatchings([
+      [true, true],
+      [false, false],
+    ]),
+    0,
+  );
+
+  assert.equal(subsetSumPartitionMinDifference([1, 6, 11, 5]), 1);
+  assert.equal(subsetSumPartitionMinDifference([3, 3]), 0);
+  assert.equal(subsetSumPartitionMinDifference([10]), 10);
+
+  // Every permutation of an array - the brute-force reference for both
+  // bitmask DPs below.
+  const permutations = (items) => {
+    if (items.length <= 1) return [items];
+    const result = [];
+    for (let i = 0; i < items.length; i++) {
+      const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+      for (const tail of permutations(rest)) result.push([items[i], ...tail]);
+    }
+    return result;
+  };
+
+  // Held-Karp against brute force over every permutation.
+  for (let trial = 0; trial < 30; trial++) {
+    const n = randInt(1, 7);
+    const matrix = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let u = 0; u < n; u++) {
+      for (let v = u + 1; v < n; v++) {
+        matrix[u][v] = matrix[v][u] = randInt(1, 30); // symmetric
+      }
+    }
+
+    let expected = Infinity;
+    const rest = Array.from({ length: n - 1 }, (_, i) => i + 1);
+    for (const tail of permutations(rest)) {
+      const route = [0, ...tail];
+      let total = matrix[route.at(-1)][0];
+      for (let i = 0; i + 1 < n; i++) total += matrix[route[i]][route[i + 1]];
+      expected = Math.min(expected, total);
+    }
+    assert.equal(travellingSalesman(matrix), expected);
+  }
+
+  // Perfect matchings against brute force over every permutation.
+  for (let trial = 0; trial < 30; trial++) {
+    const n = randInt(1, 6);
+    const allowed = Array.from({ length: n }, () =>
+      Array.from({ length: n }, () => random() < 0.6),
+    );
+
+    const tasks = Array.from({ length: n }, (_, i) => i);
+    const expected = permutations(tasks).filter((assignment) =>
+      assignment.every((task, person) => allowed[person][task]),
+    ).length;
+
+    assert.equal(countPerfectMatchings(allowed), expected);
+  }
+
+  // Minimum partition difference against enumerating every subset.
+  for (let trial = 0; trial < 30; trial++) {
+    const nums = Array.from({ length: randInt(1, 10) }, () => randInt(1, 20));
+    const total = nums.reduce((a, b) => a + b, 0);
+    let bestDiff = total;
+    for (let mask = 0; mask < 1 << nums.length; mask++) {
+      let part = 0;
+      for (let i = 0; i < nums.length; i++) if (mask >> i & 1) part += nums[i];
+      bestDiff = Math.min(bestDiff, Math.abs(total - 2 * part));
+    }
+    assert.equal(subsetSumPartitionMinDifference(nums), bestDiff);
+  }
+
   console.log("15-Dynamic-Programming (JavaScript): all checks passed");
+  console.log(
+    "  Interval DP checked against every parenthesisation and burst order,\n" +
+      "  bitmask DP against every permutation",
+  );
 }
 
 demo();

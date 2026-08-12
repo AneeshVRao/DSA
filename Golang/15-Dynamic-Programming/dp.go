@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/bits"
+	"math/rand"
 	"sort"
 )
 
@@ -399,6 +401,281 @@ func assert(cond bool, msg string) {
 	}
 }
 
+// ============================================================================
+// 7. Interval (partition) DP
+// ============================================================================
+
+// MatrixChainOrder returns the fewest scalar multiplications needed to multiply
+// a chain of matrices. O(n^3).
+//
+// Matrix i has shape dimensions[i] x dimensions[i+1], so n matrices need n+1
+// numbers. Multiplying a p x q by a q x r costs p*q*r scalar multiplies. The
+// product is ASSOCIATIVE but not commutative, so the parenthesisation is free
+// to choose - and the cost gap is enormous. For 10x30, 30x5, 5x60:
+//
+//	((AB)C) = 10*30*5 + 10*5*60  = 1500 + 3000  =  4500
+//	(A(BC)) = 30*5*60 + 10*30*60 = 9000 + 18000 = 27000
+//
+// This is the archetypal INTERVAL DP:
+//
+//	cost[i][j] = min over every split k in (i, j) of
+//	             cost[i][k] + cost[k][j] + (price of joining the halves)
+//
+// The subproblem is a CONTIGUOUS RANGE and the recurrence tries every cut. Two
+// things catch people out:
+//
+//  1. Iterate by INCREASING LENGTH, not by index. cost[i][j] depends on
+//     strictly shorter intervals, so they must exist first. A plain
+//     `for i / for j` double loop reads uninitialised cells.
+//  2. It is O(n^3): O(n^2) intervals, each scanning O(n) split points.
+//
+// Same skeleton as BurstBalloons, optimal BST construction, "minimum cost to
+// cut a stick" and polygon triangulation.
+func MatrixChainOrder(dimensions []int) int {
+	n := len(dimensions) - 1 // number of matrices
+	if n <= 1 {
+		return 0 // nothing to multiply
+	}
+
+	cost := make([][]int, n+1)
+	for i := range cost {
+		cost[i] = make([]int, n+1)
+	}
+
+	for length := 2; length <= n; length++ { // INCREASING LENGTH
+		for i := 0; i+length <= n; i++ {
+			j := i + length // half-open [i, j)
+			cost[i][j] = math.MaxInt64 / 4
+			for k := i + 1; k < j; k++ { // every split point
+				// Left half yields a dimensions[i] x dimensions[k] matrix,
+				// right half a dimensions[k] x dimensions[j]. Joining them
+				// costs the product of the three dimensions.
+				candidate := cost[i][k] + cost[k][j] +
+					dimensions[i]*dimensions[k]*dimensions[j]
+				cost[i][j] = min(cost[i][j], candidate)
+			}
+		}
+	}
+	return cost[0][n]
+}
+
+// BurstBalloons returns the maximum coins from bursting every balloon, each
+// paying left*self*right. O(n^3).
+//
+// The trap: bursting a balloon changes its neighbours, so "which do I burst
+// first?" leaves a subproblem that is no longer an interval - the recursion
+// does not close.
+//
+// Reverse the question. Instead of the FIRST balloon to burst, pick the LAST
+// one in each range. If k is last in the open interval (i, j), everything
+// strictly inside was burst before it, so when k pops its neighbours are
+// exactly i and j - fixed by the interval. Now the two sides are independent:
+//
+//	best[i][j] = max over k in (i, j) of
+//	             best[i][k] + best[k][j] + padded[i]*padded[k]*padded[j]
+//
+// Padding with 1 at each end removes the boundary special case.
+//
+// "Think about the last one, not the first" is the most transferable idea in
+// interval DP.
+func BurstBalloons(balloons []int) int {
+	padded := make([]int, 0, len(balloons)+2)
+	padded = append(padded, 1)
+	padded = append(padded, balloons...)
+	padded = append(padded, 1)
+
+	n := len(padded)
+	best := make([][]int, n)
+	for i := range best {
+		best[i] = make([]int, n)
+	}
+
+	for length := 2; length < n; length++ { // open-interval length
+		for i := 0; i+length < n; i++ {
+			j := i + length
+			for k := i + 1; k < j; k++ { // k is burst LAST in (i, j)
+				best[i][j] = max(best[i][j],
+					best[i][k]+best[k][j]+padded[i]*padded[k]*padded[j])
+			}
+		}
+	}
+	return best[0][n-1]
+}
+
+// MinCostToCutStick returns the cheapest order of cuts, each costing the length
+// of the piece being cut. O(m^3).
+//
+// The same skeleton with the ends padded in as fake cuts at 0 and length.
+// Sorting matters: the DP is over ADJACENT cut positions, which only form
+// intervals once the positions are in order.
+func MinCostToCutStick(length int, cuts []int) int {
+	points := make([]int, 0, len(cuts)+2)
+	points = append(points, 0)
+	points = append(points, cuts...)
+	points = append(points, length)
+	sort.Ints(points)
+
+	m := len(points)
+	cost := make([][]int, m)
+	for i := range cost {
+		cost[i] = make([]int, m)
+	}
+
+	for span := 2; span < m; span++ {
+		for i := 0; i+span < m; i++ {
+			j := i + span
+			bestSplit := math.MaxInt64 / 4
+			for k := i + 1; k < j; k++ {
+				bestSplit = min(bestSplit, cost[i][k]+cost[k][j])
+			}
+			// The piece cut always spans points[i]..points[j] whichever cut
+			// comes first, so that price is a constant here.
+			cost[i][j] = points[j] - points[i] + bestSplit
+		}
+	}
+	return cost[0][m-1]
+}
+
+// ============================================================================
+// 8. Bitmask DP
+// ============================================================================
+
+// TravellingSalesman returns the shortest tour visiting every city once and
+// returning to the start. O(2^n * n^2).
+//
+// The Held-Karp algorithm, and the canonical BITMASK DP.
+//
+// The state must remember WHICH cities have been visited - not how many,
+// because which ones remain determines the rest of the cost. A set of cities is
+// a subset of n elements, so encode it as n bits of an integer:
+//
+//	best[mask][last] = cheapest route visiting exactly the cities in mask
+//	                   and currently standing at last
+//
+// 2^n * n states, each extended n ways: O(2^n * n^2). Brute force over
+// permutations is O(n!) - for n = 20 that is 2.4e18 against 4e8. Still
+// exponential, but the difference between "never" and "a second".
+//
+// The bit operations that carry the method:
+//
+//	mask | (1 << c)       add city c
+//	mask & (1 << c)       is c in the set?
+//	mask == (1 << n) - 1  are all n in the set?
+//
+// Every subset-flavoured problem has this shape: partition into k groups,
+// assign n tasks to n workers, shortest superstring, count Hamiltonian paths.
+// The ceiling is around n = 20-22 before 2^n stops fitting in memory.
+func TravellingSalesman(distance [][]int) int {
+	n := len(distance)
+	if n <= 1 {
+		return 0
+	}
+
+	const unreachable = math.MaxInt64 / 4
+	// Start at city 0 with only city 0 visited.
+	best := make([][]int, 1<<n)
+	for mask := range best {
+		best[mask] = make([]int, n)
+		for last := range best[mask] {
+			best[mask][last] = unreachable
+		}
+	}
+	best[1][0] = 0
+
+	for mask := 0; mask < 1<<n; mask++ {
+		if mask&1 == 0 {
+			continue // every tour starts at city 0
+		}
+		for last := 0; last < n; last++ {
+			if best[mask][last] == unreachable {
+				continue // unreachable state
+			}
+			for city := 0; city < n; city++ {
+				if mask&(1<<city) != 0 {
+					continue // already visited
+				}
+				next := mask | (1 << city)
+				best[next][city] = min(best[next][city],
+					best[mask][last]+distance[last][city])
+			}
+		}
+	}
+
+	full := (1 << n) - 1
+	answer := unreachable
+	for last := 0; last < n; last++ {
+		answer = min(answer, best[full][last]+distance[last][0])
+	}
+	return answer
+}
+
+// CountPerfectMatchings counts the ways to assign n tasks to n people, each to
+// exactly one. O(2^n * n).
+//
+// compatible[person][task] says whether that pairing is allowed.
+//
+// The trick that halves the state: process people in a FIXED order. If the mask
+// holds the tasks already assigned, then popcount(mask) is exactly how many
+// people have been served - so the person index is implied and never needs
+// storing. The state collapses from (person, mask) to just mask.
+//
+// bits.OnesCount is a single CPU instruction on any modern target. Recognising
+// when one dimension is recoverable from another is what makes bitmask DP fit
+// in memory.
+func CountPerfectMatchings(compatible [][]bool) int {
+	n := len(compatible)
+	ways := make([]int, 1<<n)
+	ways[0] = 1 // one way to assign nobody
+
+	for mask := 0; mask < 1<<n; mask++ {
+		if ways[mask] == 0 {
+			continue
+		}
+		person := bits.OnesCount(uint(mask)) // implied, never stored
+		if person == n {
+			continue
+		}
+		for task := 0; task < n; task++ {
+			if mask&(1<<task) == 0 && compatible[person][task] {
+				ways[mask|(1<<task)] += ways[mask]
+			}
+		}
+	}
+	return ways[(1<<n)-1]
+}
+
+// SubsetSumPartitionMinDifference splits the input into two groups with the
+// smallest possible difference. O(n * sum).
+//
+// Included as the CONTRAST: this is not bitmask DP. The state only needs the
+// reachable sums, not which elements produced them - so a set of sums beats
+// 2^n subsets by a wide margin. Reach for a bitmask only when the IDENTITY of
+// the chosen elements actually matters.
+func SubsetSumPartitionMinDifference(nums []int) int {
+	total := 0
+	for _, value := range nums {
+		total += value
+	}
+
+	reachable := make([]bool, total+1)
+	reachable[0] = true
+	for _, value := range nums {
+		for sum := total; sum >= value; sum-- { // DOWNWARD: 0/1, not unbounded
+			if reachable[sum-value] {
+				reachable[sum] = true
+			}
+		}
+	}
+
+	best := total
+	for half := 0; half <= total/2; half++ {
+		if reachable[half] {
+			best = min(best, total-2*half)
+		}
+	}
+	return best
+}
+
 func main() {
 	for n := 0; n < 15; n++ {
 		expected := FibNaive(n)
@@ -477,5 +754,210 @@ func main() {
 	assert(MinPathSum([][]int{{1, 2, 3}, {4, 5, 6}}) == 12, "min path sum 2")
 	assert(MinPathSum(nil) == 0, "empty grid")
 
+	// --- Interval DP ---------------------------------------------------------
+	// 10x30, 30x5, 5x60: ((AB)C) costs 4500, (A(BC)) costs 27000.
+	assert(MatrixChainOrder([]int{10, 30, 5, 60}) == 4500, "matrix chain")
+	assert(MatrixChainOrder([]int{40, 20, 30, 10, 30}) == 26000, "matrix chain 2")
+	assert(MatrixChainOrder([]int{5, 10}) == 0, "a single matrix")
+	assert(MatrixChainOrder([]int{7}) == 0, "no matrices at all")
+
+	assert(BurstBalloons([]int{3, 1, 5, 8}) == 167, "burst balloons")
+	assert(BurstBalloons([]int{1, 5}) == 10, "two balloons")
+	assert(BurstBalloons([]int{9}) == 9, "one balloon")
+	assert(BurstBalloons(nil) == 0, "no balloons")
+
+	assert(MinCostToCutStick(7, []int{1, 3, 4, 5}) == 16, "cut stick")
+	assert(MinCostToCutStick(9, []int{5, 6, 1, 4, 2}) == 22, "cut stick 2")
+
+	// Against plain memoised recursion - an independent route to the answer.
+	rng := rand.New(rand.NewSource(15))
+	bruteChain := func(dims []int) int {
+		memo := map[[2]int]int{}
+		var solve func(i, j int) int
+		solve = func(i, j int) int {
+			if j-i <= 1 {
+				return 0
+			}
+			if cached, ok := memo[[2]int{i, j}]; ok {
+				return cached
+			}
+			best := math.MaxInt64 / 4
+			for k := i + 1; k < j; k++ {
+				best = min(best, solve(i, k)+solve(k, j)+dims[i]*dims[k]*dims[j])
+			}
+			memo[[2]int{i, j}] = best
+			return best
+		}
+		return solve(0, len(dims)-1)
+	}
+
+	for trial := 0; trial < 60; trial++ {
+		dims := make([]int, rng.Intn(7)+1)
+		for i := range dims {
+			dims[i] = rng.Intn(20) + 1
+		}
+		assert(MatrixChainOrder(dims) == bruteChain(dims), "chain matches brute force")
+	}
+
+	// Try every possible burst order - O(n!), so keep n tiny.
+	var bruteBurst func(values []int) int
+	bruteBurst = func(values []int) int {
+		if len(values) == 0 {
+			return 0
+		}
+		best := 0
+		for i := range values {
+			left, right := 1, 1
+			if i > 0 {
+				left = values[i-1]
+			}
+			if i+1 < len(values) {
+				right = values[i+1]
+			}
+			rest := make([]int, 0, len(values)-1)
+			rest = append(rest, values[:i]...)
+			rest = append(rest, values[i+1:]...)
+			best = max(best, left*values[i]*right+bruteBurst(rest))
+		}
+		return best
+	}
+
+	for trial := 0; trial < 40; trial++ {
+		values := make([]int, rng.Intn(7))
+		for i := range values {
+			values[i] = rng.Intn(9) + 1
+		}
+		assert(BurstBalloons(values) == bruteBurst(values), "burst matches brute force")
+	}
+
+	// --- Bitmask DP -----------------------------------------------------------
+	// A square: 0-1-2-3-0 with unit sides and diagonals of 2.
+	square := [][]int{
+		{0, 1, 2, 1},
+		{1, 0, 1, 2},
+		{2, 1, 0, 1},
+		{1, 2, 1, 0},
+	}
+	assert(TravellingSalesman(square) == 4, "walk the perimeter")
+	assert(TravellingSalesman([][]int{{0}}) == 0, "one city")
+	assert(TravellingSalesman([][]int{{0, 5}, {5, 0}}) == 10, "there and back")
+
+	identityMatch := [][]bool{{true, true, true}, {true, true, true}, {true, true, true}}
+	assert(CountPerfectMatchings(identityMatch) == 6, "3! assignments")
+	assert(CountPerfectMatchings([][]bool{{true, false}, {false, true}}) == 1, "forced")
+	assert(CountPerfectMatchings([][]bool{{true, true}, {false, false}}) == 0, "impossible")
+
+	assert(SubsetSumPartitionMinDifference([]int{1, 6, 11, 5}) == 1, "min difference")
+	assert(SubsetSumPartitionMinDifference([]int{3, 3}) == 0, "even split")
+	assert(SubsetSumPartitionMinDifference([]int{10}) == 10, "single element")
+
+	// Every permutation of a slice - the brute-force reference for both
+	// bitmask DPs below.
+	var permutations func(items []int) [][]int
+	permutations = func(items []int) [][]int {
+		if len(items) <= 1 {
+			return [][]int{append([]int(nil), items...)}
+		}
+		var result [][]int
+		for i := range items {
+			rest := make([]int, 0, len(items)-1)
+			rest = append(rest, items[:i]...)
+			rest = append(rest, items[i+1:]...)
+			for _, tail := range permutations(rest) {
+				result = append(result, append([]int{items[i]}, tail...))
+			}
+		}
+		return result
+	}
+
+	// Held-Karp against brute force over every permutation.
+	for trial := 0; trial < 30; trial++ {
+		n := rng.Intn(7) + 1
+		matrix := make([][]int, n)
+		for i := range matrix {
+			matrix[i] = make([]int, n)
+		}
+		for u := 0; u < n; u++ {
+			for v := u + 1; v < n; v++ {
+				w := rng.Intn(30) + 1
+				matrix[u][v], matrix[v][u] = w, w // symmetric
+			}
+		}
+
+		rest := make([]int, 0, n-1)
+		for i := 1; i < n; i++ {
+			rest = append(rest, i)
+		}
+		expected := math.MaxInt64 / 4
+		for _, tail := range permutations(rest) {
+			route := append([]int{0}, tail...)
+			total := matrix[route[n-1]][0]
+			for i := 0; i+1 < n; i++ {
+				total += matrix[route[i]][route[i+1]]
+			}
+			expected = min(expected, total)
+		}
+		assert(TravellingSalesman(matrix) == expected, "Held-Karp matches brute force")
+	}
+
+	// Perfect matchings against brute force over every permutation.
+	for trial := 0; trial < 30; trial++ {
+		n := rng.Intn(6) + 1
+		allowed := make([][]bool, n)
+		for p := range allowed {
+			allowed[p] = make([]bool, n)
+			for t := range allowed[p] {
+				allowed[p][t] = rng.Float64() < 0.6
+			}
+		}
+
+		tasks := make([]int, n)
+		for i := range tasks {
+			tasks[i] = i
+		}
+		expected := 0
+		for _, assignment := range permutations(tasks) {
+			valid := true
+			for person, task := range assignment {
+				if !allowed[person][task] {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				expected++
+			}
+		}
+		assert(CountPerfectMatchings(allowed) == expected, "matchings match brute force")
+	}
+
+	// Minimum partition difference against enumerating every subset.
+	for trial := 0; trial < 30; trial++ {
+		nums := make([]int, rng.Intn(10)+1)
+		total := 0
+		for i := range nums {
+			nums[i] = rng.Intn(20) + 1
+			total += nums[i]
+		}
+
+		bestDiff := total
+		for mask := 0; mask < 1<<len(nums); mask++ {
+			part := 0
+			for i := range nums {
+				if mask>>i&1 == 1 {
+					part += nums[i]
+				}
+			}
+			diff := total - 2*part
+			if diff < 0 {
+				diff = -diff
+			}
+			bestDiff = min(bestDiff, diff)
+		}
+		assert(SubsetSumPartitionMinDifference(nums) == bestDiff, "partition difference")
+	}
+
 	fmt.Println("15-Dynamic-Programming (Go): all checks passed")
+	fmt.Println("  Interval DP checked against every parenthesisation and burst order,")
+	fmt.Println("  bitmask DP against every permutation")
 }

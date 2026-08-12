@@ -35,6 +35,26 @@ writes itself - and then think about the space optimisation.
 | 15 | Minimum Path Sum | Same shape with `min`. | [LeetCode 64](https://leetcode.com/problems/minimum-path-sum/) |
 | 16 | Best Time to Buy and Sell Stock III | Four state variables. | [LeetCode 123](https://leetcode.com/problems/best-time-to-buy-and-sell-stock-iii/) |
 
+## Interval DP
+| # | Problem | Hint | Link |
+|---|---------|------|------|
+| 17 | Burst Balloons | Ask which balloon is burst LAST in each range. | [LeetCode 312](https://leetcode.com/problems/burst-balloons/) |
+| 18 | Minimum Cost to Cut a Stick | Pad the ends in as fake cuts, then sort. | [LeetCode 1547](https://leetcode.com/problems/minimum-cost-to-cut-a-stick/) |
+| 19 | Longest Palindromic Subsequence | Interval DP on (i, j); shrink from both ends. | [LeetCode 516](https://leetcode.com/problems/longest-palindromic-subsequence/) |
+| 20 | Strange Printer | Merge equal endpoints, then split the range. | [LeetCode 664](https://leetcode.com/problems/strange-printer/) |
+| 21 | Stone Game VII | Interval DP where both players play optimally. | [LeetCode 1690](https://leetcode.com/problems/stone-game-vii/) |
+| 22 | Matrix Chain Multiplication | The archetype - write it once from scratch. | [GfG](https://www.geeksforgeeks.org/problems/matrix-chain-multiplication0303/1) |
+
+## Bitmask DP
+| # | Problem | Hint | Link |
+|---|---------|------|------|
+| 23 | Partition to K Equal Sum Subsets | State is the mask of used elements. | [LeetCode 698](https://leetcode.com/problems/partition-to-k-equal-sum-subsets/) |
+| 24 | Shortest Path Visiting All Nodes | BFS over (node, mask) - TSP without the return leg. | [LeetCode 847](https://leetcode.com/problems/shortest-path-visiting-all-nodes/) |
+| 25 | Minimum Number of Work Sessions | Precompute which subsets fit in one session. | [LeetCode 1986](https://leetcode.com/problems/minimum-number-of-work-sessions-to-finish-the-tasks/) |
+| 26 | Number of Ways to Wear Different Hats | Iterate over hats, mask over people. | [LeetCode 1434](https://leetcode.com/problems/number-of-ways-to-wear-different-hats-to-each-other/) |
+| 27 | Find the Shortest Superstring | TSP where the cost is the overlap saved. | [LeetCode 943](https://leetcode.com/problems/find-the-shortest-superstring/) |
+| 28 | Travelling Salesman Problem | Held-Karp; note where 2^n stops fitting. | [GfG](https://www.geeksforgeeks.org/problems/travelling-salesman-problem2732/1) |
+
 ## Self-check before moving on
 
 - [ ] I can state the two conditions that make a problem a DP problem.
@@ -42,3 +62,8 @@ writes itself - and then think about the space optimisation.
 - [ ] I know why 1-D 0/1 knapsack iterates capacity downwards.
 - [ ] I use `long long` wherever sums can exceed 2 * 10^9.
 - [ ] I flatten or roll big tables instead of allocating `vector<vector<>>`.
+- [ ] I iterate interval DP by increasing LENGTH, never by raw index.
+- [ ] I know the burst-balloons trick: reason about the LAST element, not the first.
+- [ ] I can encode a subset as an integer and test/set membership with bit ops.
+- [ ] I know Held-Karp is O(2^n n^2) and caps out around n = 20.
+- [ ] I can tell when a bitmask is NOT needed (only the sums matter, not which).

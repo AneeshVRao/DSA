@@ -79,12 +79,78 @@ need the space optimisation or hit the recursion limit.
 | **LIS** | `dp[i]` = best ending at i | `max(dp[j]) + 1` for `j < i` with `a[j] < a[i]` |
 | **Grid paths** | `dp[r][c]` | `dp[r-1][c] + dp[r][c-1]` |
 | **Partition / subset sum** | `dp[sum]` boolean | reachable with or without this item |
+| **Interval / partition** | `dp[i][j]` over a RANGE | `min over k in (i,j) of dp[i][k] + dp[k][j] + join cost` |
+| **Bitmask (subsets)** | `dp[mask][last]` | `min over unused c of dp[mask][last] + cost(last, c)` |
 
 Recognising which family a problem belongs to is 80% of DP interviewing.
 
 ---
 
-## 5. Space optimisation
+## 5. Two families worth their own section
+
+### Interval DP - "choose where to split a range"
+
+The subproblem is a **contiguous range**, and the recurrence tries every way to
+cut it in two:
+
+```text
+cost[i][j] = min over every split k in (i, j) of
+             cost[i][k] + cost[k][j] + (price of joining the two halves)
+```
+
+`O(n^2)` intervals x `O(n)` split points = **`O(n^3)`**.
+
+> **Iterate by increasing LENGTH, never by index.** `cost[i][j]` depends on
+> strictly shorter intervals, so they must all exist before it is computed. A
+> plain `for i / for j` double loop silently reads uninitialised cells - the
+> single most common bug in this family.
+
+**Matrix chain multiplication** is the archetype: matrix product is associative
+but not commutative, so the parenthesisation is free to choose, and the cost
+gap is enormous. For `10x30, 30x5, 5x60` it is 4500 versus 27000.
+
+**Burst balloons** looks like it does not fit - bursting a balloon changes its
+neighbours, so the remaining problem is not an interval. The fix is the most
+transferable trick here: **ask which balloon is burst LAST, not first.** If `k`
+is last in `(i, j)`, everything strictly inside went before it, so when `k` pops
+its neighbours are exactly `i` and `j` - fixed by the interval. The two sides
+become independent and the recursion closes.
+
+Also: minimum cost to cut a stick, optimal BST construction, polygon
+triangulation, "strange printer", stone games.
+
+### Bitmask DP - "which subset, not how many"
+
+When the state must remember **which** elements were used - not merely how many
+- encode the set as the bits of an integer.
+
+```text
+mask | (1 << c)        add element c
+mask & (1 << c)        is c in the set?
+mask == (1 << n) - 1   are all n in the set?
+```
+
+**Travelling salesman (Held-Karp)** is the canonical case:
+`best[mask][last]` = cheapest route covering exactly `mask` and standing at
+`last`. That is `2^n * n` states, each extended `n` ways: **`O(2^n * n^2)`**
+against brute force's `O(n!)`. For `n = 20`, 4e8 versus 2.4e18 - still
+exponential, but the difference between "a second" and "never".
+
+A dimension can often be dropped: when people are processed in a fixed order,
+`popcount(mask)` already says how many have been served, so the person index
+never needs storing.
+
+> The practical ceiling is **n around 20-22**. Past that, `2^n` stops fitting in
+> memory regardless of how fast each transition is.
+
+And the counter-example worth knowing: minimum-difference partition does *not*
+need a bitmask, because only the reachable **sums** matter, not which elements
+produced them. Reach for a bitmask only when the *identity* of the chosen
+elements changes the answer.
+
+---
+
+## 6. Space optimisation
 
 If `dp[i]` only reads `dp[i-1]`, you never need the whole table:
 
@@ -97,7 +163,7 @@ and silently turn it into unbounded knapsack.
 
 ---
 
-## 6. Complexity
+## 7. Complexity
 
 | Problem | Time | Space | Space after optimisation |
 |---------|------|-------|--------------------------|
@@ -109,6 +175,8 @@ and silently turn it into unbounded knapsack.
 | LIS | `O(n^2)` | `O(n)` | `O(n log n)` with binary search |
 | Grid paths | `O(r * c)` | `O(r * c)` | `O(c)` |
 | Subset sum | `O(n * sum)` | `O(sum)` | - |
+| Matrix chain / burst balloons | `O(n^3)` | `O(n^2)` | - |
+| Travelling salesman (Held-Karp) | `O(2^n * n^2)` | `O(2^n * n)` | - |
 
 > Knapsack's `O(n * W)` is **pseudo-polynomial**: `W` is a value, not an input
 > length, so the runtime is exponential in the number of bits of `W`. That is
@@ -116,7 +184,7 @@ and silently turn it into unbounded knapsack.
 
 ---
 
-## 7. Traps
+## 8. Traps
 
 - Wrong state definition - if the recurrence needs information the state does
   not carry, add a dimension.
