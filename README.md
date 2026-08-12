@@ -9,8 +9,8 @@
 [![JavaScript](https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?style=flat-square&logo=javascript&logoColor=black)](JavaScript/)
 [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat-square&logo=go&logoColor=white)](Golang/)
 
-[![Topics](https://img.shields.io/badge/topics-19-6f42c1?style=flat-square)](#-topic-index)
-[![Implementations](https://img.shields.io/badge/implementations-76-blue?style=flat-square)](#-topic-index)
+[![Topics](https://img.shields.io/badge/topics-20-6f42c1?style=flat-square)](#-topic-index)
+[![Implementations](https://img.shields.io/badge/implementations-80-blue?style=flat-square)](#-topic-index)
 [![Practice problems](https://img.shields.io/badge/practice%20problems-900%2B-orange?style=flat-square)](#-how-to-use-this-repo)
 [![Self-verifying](https://img.shields.io/badge/tests-self--verifying-brightgreen?style=flat-square)](#-how-to-use-this-repo)
 [![Stars](https://img.shields.io/github/stars/AneeshVRao/DSA?style=flat-square&color=yellow)](https://github.com/AneeshVRao/DSA/stargazers)
@@ -59,11 +59,11 @@ DSA/
 │   │   ├── basics.py          │   │   ├── basics.js
 │   │   └── Problems.md        │   │   └── Problems.md
 │   ├── 02-Time-Space-Comp../  │   ├── ...
-│   └── ... 19 topics          │   └── package.json
+│   └── ... 20 topics          │   └── package.json
 │                              │
 ├── C++/                       ├── Golang/
 │   ├── 01-Basics-and-Syntax/  │   ├── 01-Basics-and-Syntax/
-│   └── ... 19 topics          │   ├── ... 19 topics
+│   └── ... 20 topics          │   ├── ... 20 topics
 │                              │   └── go.mod
 └── README.md  ← you are here
 ```
@@ -87,14 +87,15 @@ Each row links to that topic's full write-up in each language.
 | 09 | **Sorting** | 8 algorithms, stability, quickselect | [→](Python/09-Sorting/) | [→](C%2B%2B/09-Sorting/) | [→](JavaScript/09-Sorting/) | [→](Golang/09-Sorting/) |
 | 10 | **Hashing** | Hash map from scratch: chaining, load factor, rehash | [→](Python/10-Hashing/) | [→](C%2B%2B/10-Hashing/) | [→](JavaScript/10-Hashing/) | [→](Golang/10-Hashing/) |
 | 11 | **Trees** | 4 traversals (incl. Morris `O(1)`), bottom-up recursion | [→](Python/11-Trees/) | [→](C%2B%2B/11-Trees/) | [→](JavaScript/11-Trees/) | [→](Golang/11-Trees/) |
-| 12 | **Binary Search Tree** | 3-case deletion, validation, `O(h)` queries | [→](Python/12-Binary-Search-Tree/) | [→](C%2B%2B/12-Binary-Search-Tree/) | [→](JavaScript/12-Binary-Search-Tree/) | [→](Golang/12-Binary-Search-Tree/) |
-| 13 | **Heaps & Priority Queue** | Binary heap, top-k, merge-k, two-heap median | [→](Python/13-Heaps-Priority-Queue/) | [→](C%2B%2B/13-Heaps-Priority-Queue/) | [→](JavaScript/13-Heaps-Priority-Queue/) | [→](Golang/13-Heaps-Priority-Queue/) |
-| 14 | **Graphs** | BFS/DFS, topological sort, Dijkstra, Bellman-Ford | [→](Python/14-Graphs/) | [→](C%2B%2B/14-Graphs/) | [→](JavaScript/14-Graphs/) | [→](Golang/14-Graphs/) |
-| 15 | **Dynamic Programming** | Memo vs tabulation + every classic family | [→](Python/15-Dynamic-Programming/) | [→](C%2B%2B/15-Dynamic-Programming/) | [→](JavaScript/15-Dynamic-Programming/) | [→](Golang/15-Dynamic-Programming/) |
+| 12 | **Binary Search Tree** | 3-case deletion, validation, AVL rotations | [→](Python/12-Binary-Search-Tree/) | [→](C%2B%2B/12-Binary-Search-Tree/) | [→](JavaScript/12-Binary-Search-Tree/) | [→](Golang/12-Binary-Search-Tree/) |
+| 13 | **Heaps & Priority Queue** | Binary heap, top-k, merge-k, two-heap median, indexed PQ | [→](Python/13-Heaps-Priority-Queue/) | [→](C%2B%2B/13-Heaps-Priority-Queue/) | [→](JavaScript/13-Heaps-Priority-Queue/) | [→](Golang/13-Heaps-Priority-Queue/) |
+| 14 | **Graphs** | BFS/DFS, topological sort, Dijkstra, Floyd-Warshall, SCC | [→](Python/14-Graphs/) | [→](C%2B%2B/14-Graphs/) | [→](JavaScript/14-Graphs/) | [→](Golang/14-Graphs/) |
+| 15 | **Dynamic Programming** | Memo vs tabulation, every classic family, interval + bitmask | [→](Python/15-Dynamic-Programming/) | [→](C%2B%2B/15-Dynamic-Programming/) | [→](JavaScript/15-Dynamic-Programming/) | [→](Golang/15-Dynamic-Programming/) |
 | 16 | **Greedy** | Sort keys, exchange arguments, and where greedy breaks | [→](Python/16-Greedy/) | [→](C%2B%2B/16-Greedy/) | [→](JavaScript/16-Greedy/) | [→](Golang/16-Greedy/) |
-| 17 | **Bit Manipulation** | XOR tricks, `n & (n-1)`, bitmasks as sets | [→](Python/17-Bit-Manipulation/) | [→](C%2B%2B/17-Bit-Manipulation/) | [→](JavaScript/17-Bit-Manipulation/) | [→](Golang/17-Bit-Manipulation/) |
+| 17 | **Bit Manipulation** | XOR tricks, `n & (n-1)`, bitmasks as sets, Gray code | [→](Python/17-Bit-Manipulation/) | [→](C%2B%2B/17-Bit-Manipulation/) | [→](JavaScript/17-Bit-Manipulation/) | [→](Golang/17-Bit-Manipulation/) |
 | 18 | **Trie** | Prefix tree, autocomplete, wildcards, bitwise trie | [→](Python/18-Trie/) | [→](C%2B%2B/18-Trie/) | [→](JavaScript/18-Trie/) | [→](Golang/18-Trie/) |
-| 19 | **Advanced Topics** | Union-Find, Fenwick tree, segment tree + lazy | [→](Python/19-Advanced-Topics/) | [→](C%2B%2B/19-Advanced-Topics/) | [→](JavaScript/19-Advanced-Topics/) | [→](Golang/19-Advanced-Topics/) |
+| 19 | **Advanced Topics** | Union-Find, Fenwick, segment tree + lazy, sparse table | [→](Python/19-Advanced-Topics/) | [→](C%2B%2B/19-Advanced-Topics/) | [→](JavaScript/19-Advanced-Topics/) | [→](Golang/19-Advanced-Topics/) |
+| 20 | **Math & Number Theory** | GCD/Bezout, modular arithmetic, sieves, matrix exponentiation | [→](Python/20-Math-and-Number-Theory/) | [→](C%2B%2B/20-Math-and-Number-Theory/) | [→](JavaScript/20-Math-and-Number-Theory/) | [→](Golang/20-Math-and-Number-Theory/) |
 
 ---
 
@@ -187,7 +188,8 @@ Copy this into an issue, or edit it in place and commit as you go.
 ### Specialised
 - [ ] 17 — Bit Manipulation
 - [ ] 18 — Trie
-- [ ] 19 — Advanced Topics (Union-Find, Fenwick, Segment Tree)
+- [ ] 19 — Advanced Topics (Union-Find, Fenwick, Segment Tree, Sparse Table)
+- [ ] 20 — Math & Number Theory (GCD, sieves, modular arithmetic)
 
 ### Second pass
 - [ ] Repeat 07, 11, 14, 15 in a second language
@@ -200,13 +202,13 @@ Copy this into an issue, or edit it in place and commit as you go.
 
 | | Count |
 |---|-------|
-| Topics | 19 |
+| Topics | 20 |
 | Languages | 4 |
-| Concept guides (`README.md`) | 76 |
-| Runnable implementations | 76 |
-| Problem sets (`Problems.md`) | 76 |
-| Curated practice problems | 900+ |
-| Lines of commented code | ~28,000 |
+| Concept guides (`README.md`) | 80 |
+| Runnable implementations | 80 |
+| Problem sets (`Problems.md`) | 80 |
+| Curated practice problems | 1200+ |
+| Lines of commented code | ~40,000 |
 
 ---
 
@@ -229,6 +231,16 @@ Copy this into an issue, or edit it in place and commit as you go.
 | "prefix", "autocomplete", "dictionary" | trie | [18](Python/18-Trie/) |
 | "merge these groups", "connected?" | union-find | [19](Python/19-Advanced-Topics/) |
 | "range query WITH updates" | Fenwick / segment tree | [19](Python/19-Advanced-Topics/) |
+| "range min/max", data never changes | sparse table | [19](Python/19-Advanced-Topics/) |
+| "answer modulo 1e9+7" | modular arithmetic, inverse factorials | [20](Python/20-Math-and-Number-Theory/) |
+| "nth term, n up to 1e18" | matrix exponentiation | [20](Python/20-Math-and-Number-Theory/) |
+| "all primes up to n" / "factorise many" | sieve, smallest-prime-factor | [20](Python/20-Math-and-Number-Theory/) |
+| "shortest path between EVERY pair" | Floyd-Warshall | [14](Python/14-Graphs/) |
+| "which nodes can reach each other" | Kosaraju / Tarjan SCC | [14](Python/14-Graphs/) |
+| "choose where to split a range" | interval DP | [15](Python/15-Dynamic-Programming/) |
+| "which subset, not how many" | bitmask DP | [15](Python/15-Dynamic-Programming/) |
+| "guaranteed O(log n), any input order" | AVL tree | [12](Python/12-Binary-Search-Tree/) |
+| "change a queued item's priority" | indexed priority queue | [13](Python/13-Heaps-Priority-Queue/) |
 | "constant space, find the odd one out" | XOR | [17](Python/17-Bit-Manipulation/) |
 
 ---
